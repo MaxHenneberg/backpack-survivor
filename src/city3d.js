@@ -486,7 +486,11 @@ export class CityBackdrop {
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.SRC_ALPHA,gl.ONE);
     gl.depthMask(false);
+    // Loot columns are volumetric beacons and must remain visible through
+    // towers; otherwise their camera-facing signs appear detached from them.
+    gl.disable(gl.DEPTH_TEST);
     gl.drawArrays(gl.TRIANGLES,0,vertices.length/7);
+    gl.enable(gl.DEPTH_TEST);
     gl.depthMask(true);
     gl.disable(gl.BLEND);
   }
@@ -511,7 +515,14 @@ export class CityBackdrop {
     gl.vertexAttribPointer(this.position,3,gl.FLOAT,false,24,0);
     gl.enableVertexAttribArray(this.color);
     gl.vertexAttribPointer(this.color,3,gl.FLOAT,false,24,12);
+    // These camera-facing pickup signs are visibility markers: let their
+    // overlapping face layers draw in order instead of z-fighting with each
+    // other or flickering as the city passes behind them.
+    gl.depthMask(false);
+    gl.disable(gl.DEPTH_TEST);
     gl.drawArrays(gl.TRIANGLES,0,vertices.length/6);
+    gl.enable(gl.DEPTH_TEST);
+    gl.depthMask(true);
   }
 
   rebuild(cx, cz) {
