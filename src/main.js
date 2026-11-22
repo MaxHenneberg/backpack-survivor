@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import './style.css';
 import { CityBackdrop } from './city3d.js';
-import { ITEMS, GRID, ITEM_LEVEL_CAP, RARITIES, STARTING_ITEMS, adjacentTo, canPlace, canSwap, cellsFor, footprintClipPath, footprintFor, footprintOutlinePath, getWeaponStats, projectileFanAngles, rollLoot, rollLootFromRarity } from './items.js';
+import { ITEMS, GRID, ITEM_LEVEL_CAP, RARITIES, STARTING_ITEMS, adjacentTo, canPlace, canSwap, cellsFor, footprintClipPath, footprintFor, footprintIconAnchor, getWeaponStats, overlappingSameItems, projectileFanAngles, rollLoot, rollLootFromRarity } from './items.js';
 import { META_PERKS, loadProgression, saveProgression } from './progression.js';
 
 const PLAYER_SHIELD_CAP=150;
@@ -465,8 +465,8 @@ class Undercity extends Phaser.Scene {
     return { x: Math.round(this.player.x / 280) * 280 + across, y: this.player.y + along };
   }
   addFloorLoot(itemId, rarity, x, y, kind='item') {
-    const quality = RARITIES[rarity], tint = Number.parseInt((kind==='kit'?ITEMS[itemId].color:quality.color).slice(1), 16);
-    const drop = { uid: `floor-${++state.lootIndex}`, itemId, rarity, kind, x, y, pickupHeight: DRONE_FLIGHT_HEIGHT, tint, phase: Math.random() * Math.PI * 2 };
+    const quality = RARITIES[rarity], tint = Number.parseInt(quality.color.slice(1), 16);
+    const drop = { uid: `floor-${++state.lootIndex}`, itemId, rarity, kind, itemKind: ITEMS[itemId].kind, x, y, pickupHeight: DRONE_FLIGHT_HEIGHT, tint, phase: Math.random() * Math.PI * 2 };
     this.floorLoot.push(drop);
     playRarityDing(rarity);
     return drop;
@@ -609,7 +609,7 @@ function renderBackpack() {
       const intervalLabel = effectiveCooldown ? `${(effectiveCooldown / 1000).toFixed(2)}s / SHOT` : 'PASSIVE';
       const visual = def.shape ? ACTIVE_ITEM_SVG[def.shape] : def.icon;
       const cooldownClock = def.kind === 'active' ? `<span class="cooldown-clock" data-uid="${item.uid}" aria-hidden="true"></span><span class="cooldown-clock-time" data-uid="${item.uid}" aria-label="Ready to fire">READY</span>` : '';
-      const upgradeTarget=isPreview?state.items.find((entry)=>entry.uid!==item.uid&&entry.itemId===item.itemId&&entry.x>=0&&cellsFor(entry).some((slot)=>previewCells.some((target)=>slot.x===target.x&&slot.y===target.y))&&(entry.level??1)<ITEM_LEVEL_CAP):null;
+      const upgradeTarget=isPreview?overlappingSameItems(state.items,item,state.selected.x,state.selected.y).find((entry)=>(entry.level??1)<ITEM_LEVEL_CAP)??null:null;
       cell.classList.add('has-item', def.kind, `rarity-${item.rarity ?? def.rarity}`);
       cell.style.setProperty('--item-color', rarity.color); if(upgradeTarget)cell.classList.add('upgrade-target-preview');
       if (isPreview) {
@@ -617,12 +617,13 @@ function renderBackpack() {
         const blockers = state.items.filter((entry) => entry.uid !== item.uid && entry.x >= 0 && cellsFor(entry).some((slot) => targetKeys.has(`${slot.x},${slot.y}`)));
         cell.classList.add('is-carried', 'is-placement-preview', blockers.length ? 'placement-replacing' : canPlace(state.items, item.uid, state.selected.x, state.selected.y) ? 'placement-valid' : 'placement-invalid');
       }
-      const rotation=(item.rotation??0)%4,glyphCols=rotation%2?height:width,glyphRows=rotation%2?width:height;
-      cell.style.setProperty('--glyph-x',centerX+'%');cell.style.setProperty('--glyph-y',centerY+'%');cell.style.setProperty('--glyph-cols',String(glyphCols));cell.style.setProperty('--glyph-rows',String(glyphRows));
+      const rotation=(item.rotation??0)%4;
+      const glyphAnchor=footprintIconAnchor(footprint);
+      const glyphCols=glyphAnchor.shape==='irregular'?1:rotation%2?height:width,glyphRows=glyphAnchor.shape==='irregular'?1:rotation%2?width:height;
+      cell.style.setProperty('--glyph-x',(glyphAnchor.x/width*100)+'%');cell.style.setProperty('--glyph-y',(glyphAnchor.y/height*100)+'%');cell.style.setProperty('--glyph-cols',String(glyphCols));cell.style.setProperty('--glyph-rows',String(glyphRows));
       const glyphStyle='--item-rotation:'+rotation*90+'deg';
       const footprintMap='<span class="item-footprint-map" aria-hidden="true">'+footprint.map(([fx,fy])=>'<i style="grid-column:'+(fx+1)+';grid-row:'+(fy+1)+'"></i>').join('')+'</span>';
-      const footprintOutline='<svg class="item-footprint-outline" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><path d="'+footprintOutlinePath(footprint)+'"/></svg>';
-      cell.innerHTML = '<span class="item-name">'+def.name+'</span><span class="item-level-badge" aria-label="Level '+level+'"><span aria-hidden="true">★</span><b>'+level+'</b></span>'+footprintMap+footprintOutline+'<span class="item-art-region"><span class="item-glyph'+(def.shape?' active-glyph':'')+'" style="'+glyphStyle+'">'+visual+'</span></span>'+cooldownClock+'<span class="item-cooldown">'+intervalLabel+'</span>';
+      cell.innerHTML = '<span class="item-name">'+def.name+'</span><span class="item-level-badge" aria-label="Level '+level+'"><span aria-hidden="true">★</span><b>'+level+'</b></span>'+footprintMap+'<span class="item-art-region"><span class="item-glyph'+(def.shape?' active-glyph':'')+'" style="'+glyphStyle+'">'+visual+'</span></span>'+cooldownClock+'<span class="item-cooldown">'+intervalLabel+'</span>';
       cell.setAttribute('aria-label', `${def.name}, ${rarity.label}, level ${level} of ${ITEM_LEVEL_CAP}, ${effectiveCooldown ? `cooldown ${ (effectiveCooldown / 1000).toFixed(2) } seconds between shots` : 'passive item'}. ${def.description} Column ${x + 1}, row ${y + 1}. Select to move.`); cell.dataset.uid = item.uid;
       cell.addEventListener('pointerenter', () => showItemTooltip(item, cell, upgradeTarget));
       cell.addEventListener('pointerleave', hideItemTooltip);
@@ -660,12 +661,11 @@ function resumeAfterInventoryAction() { if(!state.inventoryPausedRun)return;stat
 function pickupItem(uid) { const item=state.items.find((i)=>i.uid===uid);if(!item)return;pauseForInventory();state.carried=uid;state.selected={x:item.x,y:item.y};hideItemTooltip();renderBackpack();focusSelectedCell();showToast(ITEMS[item.itemId].name.toUpperCase()+' PICKED UP · CHOOSE A CELL · Q / E ROTATE'); }
 function placeCarried(x, y) {
   const item = state.items.find((entry) => entry.uid === state.carried); if (!item) return false;
-  const targetCells = new Set(cellsFor(item,x,y).map((cell)=>`${cell.x},${cell.y}`));
-  const blockers = state.items.filter((entry)=>entry.uid!==item.uid&&entry.x>=0&&cellsFor(entry).some((cell)=>targetCells.has(`${cell.x},${cell.y}`)));
-  if(blockers.length===1&&blockers[0].itemId===item.itemId) {
-    const target=blockers[0],level=Math.max(1,target.level??1);
-    if(level>=ITEM_LEVEL_CAP){showToast(`${ITEMS[item.itemId].name.toUpperCase()} ALREADY MAX LEVEL`);return false;}
-    target.level=level+1;
+  const sameItems=overlappingSameItems(state.items,item,x,y);
+  if(sameItems.length) {
+    const target=sameItems.find((entry)=>(entry.level??1)<ITEM_LEVEL_CAP);
+    if(!target){showToast(`${ITEMS[item.itemId].name.toUpperCase()} ALREADY MAX LEVEL`);return false;}
+    target.level=Math.max(1,target.level??1)+1;
     state.items.splice(state.items.indexOf(item),1);
     const wasLoot=state.heldLoot===item.uid;
     state.carried=null;
@@ -673,6 +673,8 @@ function placeCarried(x, y) {
     state.selected={x:target.x,y:target.y};resumeAfterInventoryAction();renderBackpack();returnFocusToGame();
     showToast(`${ITEMS[target.itemId].name.toUpperCase()} UPGRADED · LV ${target.level}`);return true;
   }
+  const targetCells = new Set(cellsFor(item,x,y).map((cell)=>`${cell.x},${cell.y}`));
+  const blockers = state.items.filter((entry)=>entry.uid!==item.uid&&entry.x>=0&&cellsFor(entry).some((cell)=>targetCells.has(`${cell.x},${cell.y}`)));
   const existing = state.items.find((entry) => entry.uid !== item.uid && entry.x >= 0 && cellsFor(entry).some((cell) => cell.x === x && cell.y === y));
   if (!canPlace(state.items, item.uid, x, y)) {
     const targetKeys = new Set(cellsFor(item, x, y).map((slot) => `${slot.x},${slot.y}`));

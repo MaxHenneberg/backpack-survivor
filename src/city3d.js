@@ -68,8 +68,20 @@ function appendQuad(vertices, a, b, c, d, color) {
   for (const point of [a,b,c,a,c,d]) vertices.push(point[0],point[1],point[2],color[0],color[1],color[2]);
 }
 
-function appendTriangle(vertices, a, b, c, color) {
-  for (const point of [a,b,c]) vertices.push(point[0],point[1],point[2],color[0],color[1],color[2]);
+export function billboardBasis(camera, center) {
+  const normal=normalize([camera[0]-center[0],camera[1]-center[1],camera[2]-center[2]]);
+  let right=cross([0,1,0],normal);
+  if(Math.hypot(...right)<1e-5)right=[1,0,0];else right=normalize(right);
+  return {right,up:normalize(cross(normal,right)),normal};
+}
+
+function billboardPoint(center,right,up,x,y) {
+  return [center[0]+right[0]*x+up[0]*y,center[1]+right[1]*x+up[1]*y,center[2]+right[2]*x+up[2]*y];
+}
+
+function appendBillboardRect(vertices,center,right,up,x,y,width,height,color) {
+  const hw=width/2,hh=height/2;
+  appendQuad(vertices,billboardPoint(center,right,up,x-hw,y-hh),billboardPoint(center,right,up,x+hw,y-hh),billboardPoint(center,right,up,x+hw,y+hh),billboardPoint(center,right,up,x-hw,y+hh),color);
 }
 
 function appendGradientQuad(vertices, a, b, c, d, lower, upper) {
@@ -84,6 +96,18 @@ function appendGlowVertex(vertices, point, color, alpha) {
 
 function appendGlowQuad(vertices, a, b, c, d, lowerColor, upperColor, lowerAlpha, upperAlpha) {
   for (const [point,color,alpha] of [[a,lowerColor,lowerAlpha],[b,lowerColor,lowerAlpha],[c,upperColor,upperAlpha],[a,lowerColor,lowerAlpha],[c,upperColor,upperAlpha],[d,upperColor,upperAlpha]]) appendGlowVertex(vertices,point,color,alpha);
+}
+
+function appendGlowBillboardRect(vertices,center,right,up,x,y,width,height,color,alpha) {
+  const hw=width/2,hh=height/2;
+  appendGlowQuad(vertices,billboardPoint(center,right,up,x-hw,y-hh),billboardPoint(center,right,up,x+hw,y-hh),billboardPoint(center,right,up,x+hw,y+hh),billboardPoint(center,right,up,x-hw,y+hh),color,color,alpha,alpha);
+}
+
+export function lootSignGlyph(drop) {
+  if(drop.itemKind==='active')return [[0,0,22,10],[-4,-8,6,9],[14,3,15,3],[3,7,7,2]];
+  if(drop.kind==='kit'&&drop.itemId==='shieldKit')return [[0,8,14,3],[-6,3,3,11],[6,3,3,11],[0,-5,14,3],[-5,-1,3,7],[5,-1,3,7]];
+  if(drop.kind==='kit')return [[0,0,5,20],[0,0,20,5]];
+  return [[0,0,12,12],[-9,0,6,2],[9,0,6,2],[0,9,2,6],[0,-9,2,6]];
 }
 
 function appendGlowPrism(vertices, x, z, profiles, color, sides=8, tint=hex(0x09131c)) {
@@ -218,7 +242,7 @@ export class CityBackdrop {
     const gl = this.gl;
     const cx = Math.floor(px / BLOCK), cz = Math.floor(pz / BLOCK);
     if (!this.meshCenter || this.meshCenter[0] !== cx || this.meshCenter[1] !== cz) this.rebuild(cx, cz);
-    const eye = [px, 1600, pz + 620];
+    const eye = this.cameraPosition = [px, 1600, pz + 620];
     const target = [px, 0, pz];
     const vp = this.viewProjection = multiply(perspective(55 * Math.PI / 180, 1200 / 800, 8, 6000), viewMatrix(eye, target));
     gl.viewport(0, 0, this.canvas.width, this.canvas.height);
@@ -308,19 +332,16 @@ export class CityBackdrop {
         const a=side*Math.PI*2/8,b=(side+1)*Math.PI*2/8,inner=20,outer=24;
         appendQuad(vertices,[x+Math.cos(a)*inner,5,z+Math.sin(a)*inner],[x+Math.cos(a)*outer,5,z+Math.sin(a)*outer],[x+Math.cos(b)*outer,5,z+Math.sin(b)*outer],[x+Math.cos(b)*inner,5,z+Math.sin(b)*inner],colorLerp(hex(0x101927),tint,.7*pulse));
       }
-      // The pickup gem floats at drone height, with a small faceted halo around it.
-      const pickupY=drop.pickupHeight+Math.sin(this.actorTime*3.5+drop.phase)*4, gemRadius=9;
-      const corners=[[1,1],[ -1,1],[-1,-1],[1,-1]];
-      for(let side=0;side<4;side++) {
-        const a=corners[side], b=corners[(side+1)%4];
-        const pa=[x+a[0]*gemRadius,pickupY,z+a[1]*gemRadius], pb=[x+b[0]*gemRadius,pickupY,z+b[1]*gemRadius];
-        appendTriangle(vertices,pa,pb,[x,pickupY+12,z],side%2?core:colorLerp(tint,hex(0xffffff),.3));
-        appendTriangle(vertices,pb,pa,[x,pickupY-10,z],colorLerp(core,hex(0x08111a),.35));
-      }
-      for(let side=0;side<8;side++) {
-        const a=side*Math.PI*2/8,b=(side+1)*Math.PI*2/8,inner=13,outer=17;
-        appendQuad(vertices,[x+Math.cos(a)*inner,pickupY,z+Math.sin(a)*inner],[x+Math.cos(a)*outer,pickupY,z+Math.sin(a)*outer],[x+Math.cos(b)*outer,pickupY,z+Math.sin(b)*outer],[x+Math.cos(b)*inner,pickupY,z+Math.sin(b)*inner],colorLerp(hex(0x07111a),tint,.48*pulse));
-      }
+      // A camera-facing rectangular holo sign replaces the old floating diamond.
+      const pickupY=drop.pickupHeight+Math.sin(this.actorTime*3.5+drop.phase)*4;
+      const center=[x,pickupY,z],camera=[px,1600,pz+620],{right,up}=billboardBasis(camera,center);
+      const frame=colorLerp(tint,hex(0xffffff),.2+pulse*.24),plate=colorLerp(hex(0x06111b),tint,.12);
+      appendBillboardRect(vertices,center,right,up,0,0,74,48,plate);
+      appendBillboardRect(vertices,center,right,up,0,22,74,2.5,frame);
+      appendBillboardRect(vertices,center,right,up,0,-22,74,2.5,frame);
+      appendBillboardRect(vertices,center,right,up,-35.75,0,2.5,43,frame);
+      appendBillboardRect(vertices,center,right,up,35.75,0,2.5,43,frame);
+      for(const [gx,gy,gw,gh] of lootSignGlyph(drop))appendBillboardRect(vertices,center,right,up,gx,gy,gw,gh,frame);
     }
     gl.bindBuffer(gl.ARRAY_BUFFER,this.dynamicBuffer);
     gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(vertices),gl.DYNAMIC_DRAW);
@@ -395,6 +416,11 @@ export class CityBackdrop {
         const mx=x+Math.cos(angle)*radius,mz=z+Math.sin(angle)*radius,size=3+Math.sin(this.actorTime*5+mote)*1.2;
         appendGlowPrism(vertices,mx,mz,[{y:y-size*2,radius:size,alpha:.55*(1-phase*.45)},{y:y+size*2,radius:size*.35,alpha:.8*(1-phase*.45)}],colorLerp(tint,hex(0xffffff),.65),6);
       }
+      const pickupY=drop.pickupHeight+Math.sin(this.actorTime*3.5+drop.phase)*4,center=[x,pickupY,z];
+      const {right,up}=billboardBasis(this.cameraPosition,center),frame=colorLerp(tint,hex(0xffffff),.3+pulse*.25);
+      appendGlowBillboardRect(vertices,center,right,up,0,0,82,56,frame,.1*pulse);
+      for(const [gx,gy,gw,gh] of [[0,22,76,2], [0,-22,76,2], [-37,0,2,44], [37,0,2,44], ...lootSignGlyph(drop)])
+        appendGlowBillboardRect(vertices,center,right,up,gx,gy,gw,gh,frame,.82*pulse);
     }
     gl.useProgram(this.glowProgram);
     gl.uniformMatrix4fv(this.glowMatrix,false,this.viewProjection);

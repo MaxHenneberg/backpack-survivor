@@ -56,6 +56,19 @@ export function cellsFor(item, x = item.x, y = item.y) {
   return footprintFor(item).map(([dx, dy]) => ({ x: x + dx, y: y + dy }));
 }
 
+export function footprintIconAnchor(footprint) {
+  if(!footprint.length)return {x:.5,y:.5,shape:'rectangle'};
+  const width=Math.max(...footprint.map(([x])=>x))+1,height=Math.max(...footprint.map(([,y])=>y))+1;
+  if(width*height===footprint.length)return {x:width/2,y:height/2,shape:'rectangle'};
+  const [x,y]=[...footprint].sort((a,b)=>a[1]-b[1]||a[0]-b[0])[0];
+  return {x:x+.5,y:y+.5,shape:'irregular'};
+}
+
+export function overlappingSameItems(items,item,x,y) {
+  const targetCells=new Set(cellsFor(item,x,y).map(({x:cx,y:cy})=>`${cx},${cy}`));
+  return items.filter((entry)=>entry.uid!==item.uid&&entry.itemId===item.itemId&&entry.x>=0&&cellsFor(entry).some(({x:cx,y:cy})=>targetCells.has(`${cx},${cy}`)));
+}
+
 export function footprintFor(item) {
   return rotateFootprint(ITEMS[item.itemId].footprint, item.rotation ?? 0);
 }
@@ -100,14 +113,6 @@ export function footprintClipPath(footprint) {
     if (!edge) break;
   }
   return `polygon(${points.slice(0, -1).map(([x, y]) => `${x / width * 100}% ${y / height * 100}%`).join(',')})`;
-}
-
-export function footprintOutlinePath(footprint) {
-  const polygon=footprintClipPath(footprint),points=polygon.match(/\d+(?:\.\d+)?%\s+\d+(?:\.\d+)?%/g)??[];
-  return points.map((point,index)=>{
-    const [x,y]=point.match(/\d+(?:\.\d+)?/g).map(Number);
-    return `${index?'L':'M'} ${x} ${y}`;
-  }).join(' ')+' Z';
 }
 
 export function projectileFanAngles(angle, count, spread = .18) {
