@@ -6,7 +6,7 @@ import { META_PERKS, loadProgression, saveProgression } from './progression.js';
 
 const PLAYER_SHIELD_CAP=150;
 const progression=loadProgression();
-const state = { items: structuredClone(STARTING_ITEMS), health: 100, shield: 0, kills: 0, elapsed: 0, credits: progression.credits, perks: progression.perks, running: false, paused: false, inventoryPausedRun: false, selected: { x: 0, y: 0 }, carried: null, heldLoot: null, lootIndex: 0, backpackFocus: false };
+const state = { items: structuredClone(STARTING_ITEMS), health: 100, shield: 0, kills: 0, elapsed: 0, credits: progression.credits, perks: progression.perks, running: false, paused: false, inventoryPausedRun: false, selected: { x: 0, y: 0 }, carried: null, heldLoot: null, lootIndex: 0, backpackFocus: false, pointerDragging: false, pointerDragOffset: null, pointerId: null };
 const gridNode = document.querySelector('#backpack-grid');
 const tooltipNode = document.querySelector('#item-tooltip');
 const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
@@ -579,6 +579,17 @@ const game = new Phaser.Game({ type: Phaser.AUTO, parent: 'game', width: 1200, h
 
 function gridItemAt(x, y, excludedUid = null) { return state.items.find((entry) => entry.uid !== excludedUid && entry.x >= 0 && entry.y >= 0 && cellsFor(entry).some((cell) => cell.x === x && cell.y === y)); }
 function findOpenCell(item = null) { for (let y = 0; y < GRID.height; y++) for (let x = 0; x < GRID.width; x++) { if (item ? canPlace(state.items, item.uid, x, y) : !gridItemAt(x, y)) return { x, y }; } return null; }
+function gridCellFromPoint(clientX, clientY) {
+  const rect = gridNode.getBoundingClientRect();
+  if (clientX < rect.left || clientX > rect.right || clientY < rect.top || clientY > rect.bottom) return null;
+  const style = getComputedStyle(gridNode), gapX = Number.parseFloat(style.columnGap) || 0, gapY = Number.parseFloat(style.rowGap) || 0;
+  const cellWidth = (rect.width - gapX * (GRID.width - 1)) / GRID.width, cellHeight = (rect.height - gapY * (GRID.height - 1)) / GRID.height;
+  const indexAt = (offset, size, gap, count) => {
+    const stride = size + gap, index = Math.floor(offset / stride), within = offset - index * stride;
+    return clamp(index + (within > size + gap / 2 ? 1 : 0), 0, count - 1);
+  };
+  return { x: indexAt(clientX - rect.left, cellWidth, gapX, GRID.width), y: indexAt(clientY - rect.top, cellHeight, gapY, GRID.height) };
+}
 function renderBackpack() {
   gridNode.replaceChildren();
   for (let i = 0; i < GRID.width * GRID.height; i++) {
@@ -633,8 +644,29 @@ function renderBackpack() {
     if (isPreview || (item ? cellsFor(item).some((slot) => slot.x === state.selected.x && slot.y === state.selected.y) : state.selected.x === x && state.selected.y === y)) cell.classList.add('is-cursor');
     cell.addEventListener('focus', () => { state.backpackFocus = true; });
     cell.addEventListener('blur', () => { setTimeout(() => { state.backpackFocus = gridNode.contains(document.activeElement); }, 0); });
-    cell.addEventListener('click', () => { if (state.suppressClick) { state.suppressClick = false; return; } state.backpackFocus = true; state.selected = { x:cellX, y:cellY }; const here = gridItemAt(cellX, cellY); if (state.carried) placeCarried(cellX, cellY); else if (here) pickupItem(here.uid); else renderBackpack(); });
-    cell.addEventListener('pointerdown', (event) => { if (event.button !== 0 || !cell.dataset.uid) return; state.pointerStart = { uid: cell.dataset.uid, x:cellX, y:cellY, clientX: event.clientX, clientY: event.clientY }; });
+    cell.addEventListener('click', (event) => {
+      if (state.suppressClick) { state.suppressClick = false; return; }
+      state.backpackFocus = true;
+      const pointerCell = event.detail === 0 ? null : gridCellFromPoint(event.clientX, event.clientY), target = pointerCell ?? { x: cellX, y: cellY };
+      const here = gridItemAt(target.x, target.y);
+      if (here && !cellsFor(here).some((slot) => slot.x === target.x && slot.y === target.y)) return;
+      if (state.carried) {
+        const offset = state.pointerDragging ? state.pointerDragOffset ?? { x: 0, y: 0 } : { x: 0, y: 0 };
+        const anchor = placementAnchor(state.items.find((entry) => entry.uid === state.carried), target.x - offset.x, target.y - offset.y);
+        state.selected = anchor;
+        if (placeCarried(anchor.x, anchor.y)) { state.pointerDragging = false; state.pointerDragOffset = null; }
+      } else if (here) {
+        state.selected = { x: here.x, y: here.y }; pickupItem(here.uid);
+      } else { state.selected = target; renderBackpack(); }
+    });
+    cell.addEventListener('pointerdown', (event) => {
+      if (event.button !== 0 || !cell.dataset.uid) return;
+      const item = state.items.find((entry) => entry.uid === cell.dataset.uid), pointerCell = gridCellFromPoint(event.clientX, event.clientY);
+      if (!item || !pointerCell || !cellsFor(item).some((slot) => slot.x === pointerCell.x && slot.y === pointerCell.y)) return;
+      state.pointerStart = { uid: item.uid, x: item.x, y: item.y, grabX: pointerCell.x - item.x, grabY: pointerCell.y - item.y, clientX: event.clientX, clientY: event.clientY };
+      state.pointerId = event.pointerId;
+      gridNode.setPointerCapture(event.pointerId);
+    });
     gridNode.append(cell);
   }
   const placedCount = state.items.filter((item) => item.x >= 0).reduce((count, item) => count + cellsFor(item).length, 0);
@@ -660,7 +692,7 @@ function sellCarriedInventoryItem() {
 }
 function pauseForInventory() { if(!state.running||state.paused)return;state.inventoryPausedRun=true;state.paused=true;document.querySelector('#pause-button').textContent='▶'; }
 function resumeAfterInventoryAction() { if(!state.inventoryPausedRun)return;state.inventoryPausedRun=false;state.paused=false;document.querySelector('#pause-button').textContent='Ⅱ'; }
-function pickupItem(uid) { const item=state.items.find((i)=>i.uid===uid);if(!item)return;pauseForInventory();state.carried=uid;state.selected={x:item.x,y:item.y};hideItemTooltip();renderBackpack();focusSelectedCell();showToast(ITEMS[item.itemId].name.toUpperCase()+' PICKED UP · CHOOSE A CELL · Q / E ROTATE'); }
+function pickupItem(uid) { const item=state.items.find((i)=>i.uid===uid);if(!item)return;state.pointerDragging=false;state.pointerDragOffset=null;pauseForInventory();state.carried=uid;state.selected={x:item.x,y:item.y};hideItemTooltip();renderBackpack();focusSelectedCell();showToast(ITEMS[item.itemId].name.toUpperCase()+' PICKED UP · CHOOSE A CELL · Q / E ROTATE'); }
 function placeCarried(x, y) {
   const item = state.items.find((entry) => entry.uid === state.carried); if (!item) return false;
   const sameItems=overlappingSameItems(state.items,item,x,y);
@@ -708,6 +740,7 @@ function placeCarried(x, y) {
 }
 function cancelCarried() {
   if (!state.carried) return;
+  state.pointerDragging = false; state.pointerDragOffset = null;
   const item = state.items.find((entry) => entry.uid === state.carried);
     if (state.heldLoot === state.carried) {
     state.items.splice(state.items.indexOf(item), 1); const scene = game.scene.getScene('undercity'); scene.dropLootReplacement(item);
@@ -911,9 +944,32 @@ gridNode.addEventListener('keydown', (event) => {
   if (event.key === ' ' || event.key === 'Enter') { event.preventDefault(); handleBackpackConfirm(); }
   if (event.key === 'Escape') { event.preventDefault(); cancelCarried(); }
 });
-gridNode.addEventListener('pointermove', (event) => { const item = state.items.find((entry) => entry.uid === state.carried); if (!item) return; const target = event.target.closest('.pack-cell'); if (!target) return; const next = placementAnchor(item, Number(target.dataset.x), Number(target.dataset.y)); if (next.x === state.selected.x && next.y === state.selected.y) return; state.selected = next; renderBackpack(); });
-window.addEventListener('pointermove', (event) => { const start = state.pointerStart; if (!start || state.carried || Math.hypot(event.clientX - start.clientX, event.clientY - start.clientY) < 8) return; state.backpackFocus = true; state.suppressClick = true; state.selected = { x: start.x, y: start.y }; pickupItem(start.uid); });
-window.addEventListener('pointerup', (event) => { const start = state.pointerStart; if (!start) return; const dragged = Boolean(state.carried && state.suppressClick); state.pointerStart = null; if (!dragged) return; const destination = document.elementFromPoint(event.clientX, event.clientY)?.closest('.pack-cell'); if (destination) placeCarried(Number(destination.dataset.x), Number(destination.dataset.y)); else cancelCarried(); setTimeout(() => { state.suppressClick = false; }, 0); });
+window.addEventListener('pointermove', (event) => {
+  const start = state.pointerStart;
+  if (start && !state.carried && Math.hypot(event.clientX - start.clientX, event.clientY - start.clientY) >= 8) {
+    state.backpackFocus = true; state.suppressClick = true;
+    state.selected = { x: start.x, y: start.y }; pickupItem(start.uid);
+    state.pointerDragOffset = { x: start.grabX, y: start.grabY }; state.pointerDragging = true;
+  }
+  const item = state.items.find((entry) => entry.uid === state.carried);
+  if (!item || !state.pointerDragging) return;
+  const pointerCell = gridCellFromPoint(event.clientX, event.clientY);
+  if (!pointerCell) return;
+  const offset = state.pointerDragOffset ?? { x: 0, y: 0 }, next = placementAnchor(item, pointerCell.x - offset.x, pointerCell.y - offset.y);
+  if (next.x === state.selected.x && next.y === state.selected.y) return;
+  state.selected = next; renderBackpack();
+});
+window.addEventListener('pointerup', (event) => {
+  if (state.pointerId !== null && event.pointerId !== state.pointerId) return;
+  const start = state.pointerStart, dragged = Boolean(start && state.carried && state.pointerDragging);
+  state.pointerStart = null; state.pointerId = null;
+  if (!dragged) return;
+  const pointerCell = gridCellFromPoint(event.clientX, event.clientY), offset = state.pointerDragOffset ?? { x: 0, y: 0};
+  state.pointerDragging = false; state.pointerDragOffset = null;
+  if (pointerCell) { const item = state.items.find((entry) => entry.uid === state.carried), anchor = placementAnchor(item, pointerCell.x - offset.x, pointerCell.y - offset.y); placeCarried(anchor.x, anchor.y); }
+  else cancelCarried();
+  setTimeout(() => { state.suppressClick = false; }, 0);
+});
 window.addEventListener('keydown', (event) => { if (state.running && event.key === ' ' && document.activeElement !== gridNode) { event.preventDefault(); handleBackpackConfirm(); } if (state.running && event.key === 'Escape') cancelCarried(); if (event.key === 'Tab' && state.running) { event.preventDefault(); if (state.backpackFocus) returnFocusToGame(); else { state.backpackFocus = true; focusSelectedCell(); } showToast(state.backpackFocus ? 'BACKPACK CONTROL' : 'CHARACTER CONTROL'); } });
 document.querySelector('#start-button').addEventListener('click', startRun);
 renderMetaUpgrades();updateCreditDisplays();
