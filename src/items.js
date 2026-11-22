@@ -102,6 +102,14 @@ export function footprintClipPath(footprint) {
   return `polygon(${points.slice(0, -1).map(([x, y]) => `${x / width * 100}% ${y / height * 100}%`).join(',')})`;
 }
 
+export function footprintOutlinePath(footprint) {
+  const polygon=footprintClipPath(footprint),points=polygon.match(/\d+(?:\.\d+)?%\s+\d+(?:\.\d+)?%/g)??[];
+  return points.map((point,index)=>{
+    const [x,y]=point.match(/\d+(?:\.\d+)?/g).map(Number);
+    return `${index?'L':'M'} ${x} ${y}`;
+  }).join(' ')+' Z';
+}
+
 export function projectileFanAngles(angle, count, spread = .18) {
   const total = Math.max(1, Math.floor(count));
   return Array.from({ length: total }, (_, index) => angle + (index - (total - 1) / 2) * spread);
