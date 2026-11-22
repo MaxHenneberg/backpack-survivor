@@ -227,9 +227,11 @@
 .pack-cell.has-item.is-cursor{outline:none!important;box-shadow:none!important}
 .pack-cell.has-item.is-cursor .item-footprint-map i{filter:brightness(1.2)}
 .pack-cell.is-placement-preview{animation:none!important;border-color:transparent!important;box-shadow:none!important;pointer-events:none!important}
+.pack-cell.is-placement-preview{background:linear-gradient(145deg,#10182966,#0d142288)!important}
 .pack-cell.placement-valid .item-footprint-map i{border-color:#65f0cb;background:linear-gradient(145deg,#65f0cb55,#65f0cb18);box-shadow:inset 0 0 12px #37e4b544,0 0 10px #37e4b555}
 .pack-cell.placement-invalid .item-footprint-map i{border-color:#ff6684;background:linear-gradient(145deg,#ff668455,#ff466218);box-shadow:inset 0 0 12px #ff466244,0 0 10px #ff466255}
-.pack-cell.placement-replacing .item-footprint-map i{border-color:#ffd36d;background:linear-gradient(145deg,#ffd36d55,#ffb63b18);box-shadow:inset 0 0 12px #ffb63b40,0 0 10px #ffc84d75}
+.pack-cell.placement-overlap .item-footprint-map i.is-overlap{border-color:#ff526f;background:linear-gradient(145deg,#ff526fbb,#bd1f4b70);box-shadow:inset 0 0 14px #ff264c88,0 0 12px #ff264c99}
+.pack-cell.placement-overlap{filter:none!important}
 
 /* Item art stays fixed while the occupied footprint rotates around it. */
 .pack-cell .item-glyph{transition:none!important;animation:none!important;pointer-events:none}

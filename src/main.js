@@ -548,7 +548,9 @@ class Undercity extends Phaser.Scene {
     this.floorLoot.splice(this.floorLoot.indexOf(drop), 1);
     const item = restoreItemFromFloorDrop(drop);
     state.items.push(item); state.heldLoot = item.uid; state.carried = item.uid; state.paused = true; state.backpackFocus = true;
-    const open = findOpenCell(item); if (open) state.selected = open;
+    const upgrade = state.items.find((entry) => entry.uid !== item.uid && entry.itemId === item.itemId && entry.x >= 0 && (entry.level ?? 1) < ITEM_LEVEL_CAP);
+    const initialTarget = upgrade ? { x: upgrade.x, y: upgrade.y } : findOpenCell(item);
+    if (initialTarget) state.selected = initialTarget;
     document.querySelector('#loot-prompt').hidden = true;
     renderBackpack(); renderPendingItem();
     focusSelectedCell();
@@ -599,9 +601,7 @@ function renderBackpack() {
     const isPreviewCell = Boolean(carriedItem && previewCells.some((slot) => slot.x === x && slot.y === y));
     const isPreview = Boolean(previewRenderCell && previewRenderCell.x===x && previewRenderCell.y===y);
     const occupiedItem = gridItemAt(x, y, carriedItem?.uid);
-    const coveredByPreview = Boolean(carriedItem && occupiedItem && cellsFor(occupiedItem).some((cell) => previewCells.some((slot) => slot.x === cell.x && slot.y === cell.y)));
-    const item = isPreview ? carriedItem : coveredByPreview ? null : occupiedItem;
-    if (coveredByPreview && !isPreview) continue;
+    const item = isPreview ? carriedItem : occupiedItem;
     if (isPreviewCell && !isPreview) continue;
     if (carriedItem && x===state.selected.x && y===state.selected.y && !isPreviewCell && !occupiedItem) continue;
     if (item && !isPreview && (item.x !== x || item.y !== y)) continue;
@@ -622,17 +622,18 @@ function renderBackpack() {
       const visual = def.shape ? ACTIVE_ITEM_SVG[def.shape] : def.kind === 'passive' ? PASSIVE_ITEM_ICON : def.icon;
       const cooldownClock = def.kind === 'active' ? `<span class="cooldown-clock" data-uid="${item.uid}" aria-hidden="true"></span>` : '';
       const upgradeTarget=isPreview?overlappingSameItems(state.items,item,state.selected.x,state.selected.y).find((entry)=>(entry.level??1)<ITEM_LEVEL_CAP)??null:null;
+      const targetKeys = new Set(previewCells.map((slot) => `${slot.x},${slot.y}`));
+      const overlappingCells = new Set(state.items.filter((entry) => entry.uid !== item.uid && entry.x >= 0).flatMap((entry) => cellsFor(entry).filter((slot) => targetKeys.has(`${slot.x},${slot.y}`)).map((slot) => `${slot.x},${slot.y}`)));
       cell.classList.add('has-item', def.kind, `rarity-${item.rarity ?? def.rarity}`);
       cell.style.setProperty('--item-color', rarity.color); if(upgradeTarget)cell.classList.add('upgrade-target-preview');
       if (isPreview) {
-        const targetKeys = new Set(previewCells.map((slot) => `${slot.x},${slot.y}`));
         const blockers = state.items.filter((entry) => entry.uid !== item.uid && entry.x >= 0 && cellsFor(entry).some((slot) => targetKeys.has(`${slot.x},${slot.y}`)));
-        cell.classList.add('is-carried', 'is-placement-preview', blockers.length ? 'placement-replacing' : canPlace(state.items, item.uid, state.selected.x, state.selected.y) ? 'placement-valid' : 'placement-invalid');
+        cell.classList.add('is-carried', 'is-placement-preview', blockers.length ? 'placement-overlap' : canPlace(state.items, item.uid, state.selected.x, state.selected.y) ? 'placement-valid' : 'placement-invalid');
       }
       const glyphAnchor=footprintIconAnchor(footprint);
       const glyphCols=glyphAnchor.shape==='irregular'?1:width,glyphRows=glyphAnchor.shape==='irregular'?1:height;
       cell.style.setProperty('--glyph-x',(glyphAnchor.x/width*100)+'%');cell.style.setProperty('--glyph-y',(glyphAnchor.y/height*100)+'%');cell.style.setProperty('--glyph-cols',String(glyphCols));cell.style.setProperty('--glyph-rows',String(glyphRows));
-      const footprintMap='<span class="item-footprint-map" aria-hidden="true">'+footprint.map(([fx,fy])=>'<i style="grid-column:'+(fx+1)+';grid-row:'+(fy+1)+'"></i>').join('')+'</span>';
+      const footprintMap='<span class="item-footprint-map" aria-hidden="true">'+footprint.map(([fx,fy])=>'<i'+(overlappingCells.has(`${state.selected.x+fx},${state.selected.y+fy}`)?' class="is-overlap"':'')+' style="grid-column:'+(fx+1)+';grid-row:'+(fy+1)+'"></i>').join('')+'</span>';
       cell.innerHTML = '<span class="item-name">'+def.name+'</span><span class="item-level-badge" aria-label="Level '+level+'"><span aria-hidden="true">★</span><b>'+level+'</b></span>'+footprintMap+'<span class="item-art-region"><span class="item-glyph'+(def.shape?' active-glyph':'')+'" aria-hidden="true">'+visual+'</span></span>'+cooldownClock+'<span class="item-cooldown">'+intervalLabel+'</span>';
       cell.setAttribute('aria-label', `${def.name}, ${rarity.label}, level ${level} of ${ITEM_LEVEL_CAP}, ${effectiveCooldown ? `cooldown ${ (effectiveCooldown / 1000).toFixed(2) } seconds between shots` : 'passive item'}. ${def.description} Column ${cellX + 1}, row ${cellY + 1}. Select to move.`); cell.dataset.uid = item.uid;
       cell.addEventListener('pointerenter', () => showItemTooltip(item, cell, upgradeTarget));
@@ -651,12 +652,12 @@ function renderBackpack() {
       const here = gridItemAt(target.x, target.y);
       if (here && !cellsFor(here).some((slot) => slot.x === target.x && slot.y === target.y)) return;
       if (state.carried) {
-        const offset = state.pointerDragging ? state.pointerDragOffset ?? { x: 0, y: 0 } : { x: 0, y: 0 };
+        const offset = state.pointerDragOffset ?? { x: 0, y: 0 };
         const anchor = placementAnchor(state.items.find((entry) => entry.uid === state.carried), target.x - offset.x, target.y - offset.y);
         state.selected = anchor;
         if (placeCarried(anchor.x, anchor.y)) { state.pointerDragging = false; state.pointerDragOffset = null; }
       } else if (here) {
-        state.selected = { x: here.x, y: here.y }; pickupItem(here.uid);
+        state.selected = { x: here.x, y: here.y }; pickupItem(here.uid, { x: target.x - here.x, y: target.y - here.y });
       } else { state.selected = target; renderBackpack(); }
     });
     cell.addEventListener('pointerdown', (event) => {
@@ -692,7 +693,7 @@ function sellCarriedInventoryItem() {
 }
 function pauseForInventory() { if(!state.running||state.paused)return;state.inventoryPausedRun=true;state.paused=true;document.querySelector('#pause-button').textContent='▶'; }
 function resumeAfterInventoryAction() { if(!state.inventoryPausedRun)return;state.inventoryPausedRun=false;state.paused=false;document.querySelector('#pause-button').textContent='Ⅱ'; }
-function pickupItem(uid) { const item=state.items.find((i)=>i.uid===uid);if(!item)return;state.pointerDragging=false;state.pointerDragOffset=null;pauseForInventory();state.carried=uid;state.selected={x:item.x,y:item.y};hideItemTooltip();renderBackpack();focusSelectedCell();showToast(ITEMS[item.itemId].name.toUpperCase()+' PICKED UP · CHOOSE A CELL · Q / E ROTATE'); }
+function pickupItem(uid, grabOffset = { x: 0, y: 0 }) { const item=state.items.find((i)=>i.uid===uid);if(!item)return;state.pointerDragging=false;state.pointerDragOffset=grabOffset;pauseForInventory();state.carried=uid;state.selected={x:item.x,y:item.y};hideItemTooltip();renderBackpack();focusSelectedCell();showToast(ITEMS[item.itemId].name.toUpperCase()+' PICKED UP · MOVE CURSOR, CLICK TO PLACE'); }
 function placeCarried(x, y) {
   const item = state.items.find((entry) => entry.uid === state.carried); if (!item) return false;
   const sameItems=overlappingSameItems(state.items,item,x,y);
@@ -953,7 +954,8 @@ gridNode.addEventListener('click', (event) => {
   if (!target) return;
   const item = state.items.find((entry) => entry.uid === state.carried);
   if (!item) return;
-  const anchor = placementAnchor(item, target.x, target.y);
+  const offset = state.pointerDragOffset ?? { x: 0, y: 0 };
+  const anchor = placementAnchor(item, target.x - offset.x, target.y - offset.y);
   state.selected = anchor;
   if (placeCarried(anchor.x, anchor.y)) { state.pointerDragging = false; state.pointerDragOffset = null; }
 });
@@ -965,7 +967,7 @@ window.addEventListener('pointermove', (event) => {
     state.pointerDragOffset = { x: start.grabX, y: start.grabY }; state.pointerDragging = true;
   }
   const item = state.items.find((entry) => entry.uid === state.carried);
-  if (!item || !state.pointerDragging) return;
+  if (!item) return;
   const pointerCell = gridCellFromPoint(event.clientX, event.clientY);
   if (!pointerCell) return;
   const offset = state.pointerDragOffset ?? { x: 0, y: 0 }, next = placementAnchor(item, pointerCell.x - offset.x, pointerCell.y - offset.y);
