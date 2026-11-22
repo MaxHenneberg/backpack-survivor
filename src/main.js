@@ -601,27 +601,28 @@ function renderBackpack() {
     const isPreviewCell = Boolean(carriedItem && previewCells.some((slot) => slot.x === x && slot.y === y));
     const isPreview = Boolean(previewRenderCell && previewRenderCell.x===x && previewRenderCell.y===y);
     const occupiedItem = gridItemAt(x, y, carriedItem?.uid);
-    const item = isPreview ? carriedItem : occupiedItem;
+    const placedRenderItem = state.items.find((entry) => entry.uid !== carriedItem?.uid && entry.x >= 0 && (() => { const point=footprintRenderAnchor(footprintFor(entry),entry.x,entry.y); return point.x===x&&point.y===y; })());
+    const item = isPreview ? carriedItem : placedRenderItem;
     if (isPreviewCell && !isPreview) continue;
+    if (!isPreview && occupiedItem && !placedRenderItem) continue;
     if (carriedItem && x===state.selected.x && y===state.selected.y && !isPreviewCell && !occupiedItem) continue;
-    if (item && !isPreview && (item.x !== x || item.y !== y)) continue;
-    const cellX=isPreview?state.selected.x:x,cellY=isPreview?state.selected.y:y;
+    const cellX=isPreview?state.selected.x:item?item.x:x,cellY=isPreview?state.selected.y:item?item.y:y;
     const cell = document.createElement('button'); cell.type = 'button'; cell.className = 'pack-cell'; cell.setAttribute('role', 'gridcell'); cell.dataset.x = cellX; cell.dataset.y = cellY; cell.setAttribute('aria-label', item ? `${ITEMS[item.itemId].name}, column ${cellX + 1}, row ${cellY + 1}` : `Empty, column ${cellX + 1}, row ${cellY + 1}`);
     cell.style.gridColumn = `${cellX + 1} / span 1`; cell.style.gridRow = `${cellY + 1} / span 1`; cell.dataset.width = '1'; cell.dataset.height = '1';
     if (item) {
       const footprint = footprintFor(item), width = Math.max(...footprint.map(([dx]) => dx)) + 1, height = Math.max(...footprint.map(([, dy]) => dy)) + 1;
       cell.style.gridColumn = `${cellX + 1} / span ${width}`; cell.style.gridRow = `${cellY + 1} / span ${height}`; cell.dataset.width = String(width); cell.dataset.height = String(height);
       const def = ITEMS[item.itemId], rarity = RARITIES[item.rarity ?? def.rarity], effectiveCooldown = def.kind === 'active' ? getEffectiveWeaponStats(state.items, item).cooldown : 0;
+      const upgradeTarget=isPreview?overlappingSameItems(state.items,item,state.selected.x,state.selected.y).find((entry)=>(entry.level??1)<ITEM_LEVEL_CAP)??null:null;
       cell.style.setProperty('--footprint-width', String(width)); cell.style.setProperty('--footprint-height', String(height));
       const center=footprint.reduce((sum,[fx,fy])=>({x:sum.x+fx+.5,y:sum.y+fy+.5}),{x:0,y:0});
       const centerX=center.x/footprint.length/width*100,centerY=center.y/footprint.length/height*100;
       cell.style.setProperty('--clock-x',centerX+'%');cell.style.setProperty('--clock-y',centerY+'%');
       const clip=footprintClipPath(footprint);cell.style.setProperty('--footprint-clip',clip);
-      const level=Math.max(1,Math.min(ITEM_LEVEL_CAP,item.level??1));
+      const level=upgradeTarget?Math.min(ITEM_LEVEL_CAP,(upgradeTarget.level??1)+1):Math.max(1,Math.min(ITEM_LEVEL_CAP,item.level??1));
       const intervalLabel = def.kind === 'passive' ? 'PASSIVE' : '';
       const visual = def.shape ? ACTIVE_ITEM_SVG[def.shape] : def.kind === 'passive' ? PASSIVE_ITEM_ICON : def.icon;
       const cooldownClock = def.kind === 'active' ? `<span class="cooldown-clock" data-uid="${item.uid}" aria-hidden="true"></span>` : '';
-      const upgradeTarget=isPreview?overlappingSameItems(state.items,item,state.selected.x,state.selected.y).find((entry)=>(entry.level??1)<ITEM_LEVEL_CAP)??null:null;
       const targetKeys = new Set(previewCells.map((slot) => `${slot.x},${slot.y}`));
       const overlappingCells = new Set(state.items.filter((entry) => entry.uid !== item.uid && entry.x >= 0).flatMap((entry) => cellsFor(entry).filter((slot) => targetKeys.has(`${slot.x},${slot.y}`)).map((slot) => `${slot.x},${slot.y}`)));
       const upgradeCells = new Set(upgradeTarget ? cellsFor(upgradeTarget).filter((slot) => targetKeys.has(`${slot.x},${slot.y}`)).map((slot) => `${slot.x},${slot.y}`) : []);
@@ -637,9 +638,9 @@ function renderBackpack() {
       const footprintMap='<span class="item-footprint-map" aria-hidden="true">'+footprint.map(([fx,fy])=>{const key=`${state.selected.x+fx},${state.selected.y+fy}`,marker=upgradeCells.has(key)?'is-upgrade':overlappingCells.has(key)?'is-overlap':'';return '<i'+(marker?' class="'+marker+'"':'')+' style="grid-column:'+(fx+1)+';grid-row:'+(fy+1)+'"></i>';}).join('')+'</span>';
       cell.innerHTML = '<span class="item-name">'+def.name+'</span><span class="item-level-badge" aria-label="Level '+level+'"><span aria-hidden="true">★</span><b>'+level+'</b></span>'+footprintMap+'<span class="item-art-region"><span class="item-glyph'+(def.shape?' active-glyph':'')+'" aria-hidden="true">'+visual+'</span></span>'+cooldownClock+'<span class="item-cooldown">'+intervalLabel+'</span>';
       cell.setAttribute('aria-label', `${def.name}, ${rarity.label}, level ${level} of ${ITEM_LEVEL_CAP}, ${effectiveCooldown ? `cooldown ${ (effectiveCooldown / 1000).toFixed(2) } seconds between shots` : 'passive item'}. ${def.description} Column ${cellX + 1}, row ${cellY + 1}. Select to move.`); cell.dataset.uid = item.uid;
-      cell.addEventListener('pointerenter', () => showItemTooltip(item, cell, upgradeTarget));
+      cell.addEventListener('pointerenter', () => { if(isPreview&&!upgradeTarget)hideItemTooltip();else showItemTooltip(item, cell, upgradeTarget); });
       cell.addEventListener('pointerleave', hideItemTooltip);
-      cell.addEventListener('focus', () => { state.backpackFocus = true; showItemTooltip(item, cell, upgradeTarget); });
+      cell.addEventListener('focus', () => { state.backpackFocus = true; if(isPreview&&!upgradeTarget)hideItemTooltip();else showItemTooltip(item, cell, upgradeTarget); });
       cell.addEventListener('blur', hideItemTooltip);
       if (isPreview) cell.classList.add('is-carried');
     }
@@ -834,15 +835,25 @@ function tooltipUpgradePreview(target) {
   const nextItems=state.items.map((entry)=>entry.uid===target.uid?next:entry);
   const before=tooltipStatValues(target),after=tooltipStatValues(next,nextItems);
   const rows=[['Damage','damage'],['Projectiles','projectiles'],['Cooldown','cooldown']].map(([label,key])=>'<div class="tooltip-compare-row"><span>'+label+'</span><b>'+before[key]+'</b><i>→</i><strong>'+after[key]+'</strong></div>').join('');
-  return '<section class="tooltip-upgrade"><small>NEXT LEVEL PREVIEW · '+nextLevel+'</small>'+rows+'</section>';
+  return '<section class="tooltip-upgrade"><small>UPGRADING '+ITEMS[target.itemId].name.toUpperCase()+' · LV '+(target.level??1)+' → LV '+nextLevel+'</small>'+rows+'</section>';
 }
 function showItemTooltip(item,anchor,upgradeTarget=null) {
-  const definition=ITEMS[item.itemId],rarity=RARITIES[item.rarity??definition.rarity],level=Math.max(1,Math.min(ITEM_LEVEL_CAP,item.level??1));
-  const neighbors=definition.kind==='active'?state.items.filter((entry)=>entry.uid!==item.uid&&entry.x>=0&&ITEMS[entry.itemId].kind==='passive'&&adjacentTo(item,entry)):[];
+  const level=upgradeTarget?Math.min(ITEM_LEVEL_CAP,(upgradeTarget.level??1)+1):Math.max(1,Math.min(ITEM_LEVEL_CAP,item.level??1));
+  const displayItem=upgradeTarget?{...upgradeTarget,level}:item,definition=ITEMS[displayItem.itemId],rarity=RARITIES[displayItem.rarity??definition.rarity];
+  const statItems=upgradeTarget?state.items.map((entry)=>entry.uid===upgradeTarget.uid?displayItem:entry):state.items;
+  const neighbors=definition.kind==='active'?statItems.filter((entry)=>entry.uid!==displayItem.uid&&entry.x>=0&&ITEMS[entry.itemId].kind==='passive'&&adjacentTo(displayItem,entry)):[];
   const neighborList=neighbors.length?'<section class="tooltip-synergies"><small>ADJACENT BOOSTS</small>'+neighbors.map((passive)=>'<div class="tooltip-passive"><b>'+ITEMS[passive.itemId].name+' · LV '+(passive.level??1)+'</b><span>'+passiveBonusAtLevel(passive)+'</span></div>').join('')+'</section>':'<section class="tooltip-synergies"><small>ADJACENT BOOSTS</small><span class="tooltip-no-passives">No passive items adjacent</span></section>';
   tooltipNode.style.setProperty('--tooltip-quality',rarity.color);
-  tooltipNode.innerHTML='<span class="tooltip-kind">'+definition.kind.toUpperCase()+'</span><div class="tooltip-title"><b>'+definition.name+'</b><span class="tooltip-level-badge"><i aria-hidden="true">★</i><b>'+level+'</b></span></div><p>'+definition.description+'</p>'+neighborList+'<div class="tooltip-stats"><small>RESULTING STATS</small>'+tooltipStatRows(tooltipStatValues(item))+'</div>'+tooltipUpgradePreview(upgradeTarget);
+  tooltipNode.dataset.itemKey=`${displayItem.uid??item.uid}:${level}:${upgradeTarget?.uid??''}`;
+  tooltipNode.innerHTML='<span class="tooltip-kind">'+definition.kind.toUpperCase()+'</span><div class="tooltip-title"><b>'+definition.name+'</b><span class="tooltip-level-badge"><i aria-hidden="true">★</i><b>'+level+'</b></span></div><p>'+definition.description+'</p>'+neighborList+'<div class="tooltip-stats"><small>RESULTING STATS</small>'+tooltipStatRows(tooltipStatValues(displayItem,statItems))+'</div>'+tooltipUpgradePreview(upgradeTarget);
   tooltipNode.hidden=false;positionItemTooltip(anchor);
+}
+function updateCarriedTooltip(item) {
+  const preview=gridNode.querySelector('.is-placement-preview');
+  const target=overlappingSameItems(state.items,item,state.selected.x,state.selected.y).find((entry)=>(entry.level??1)<ITEM_LEVEL_CAP);
+  if(!preview||!target){hideItemTooltip();return;}
+  const key=`${target.uid}:${Math.min(ITEM_LEVEL_CAP,(target.level??1)+1)}:${target.uid}`;
+  if(tooltipNode.hidden||tooltipNode.dataset.itemKey!==key)showItemTooltip(item,preview,target);
 }
 function positionItemTooltip(anchor) {
   if(!anchor?.getBoundingClientRect)return;
@@ -856,7 +867,7 @@ function positionItemTooltip(anchor) {
   const left=placement.left,top=placement.top;
   tooltipNode.style.left=`${left}px`;tooltipNode.style.top=`${top}px`;
 }
-function hideItemTooltip() { tooltipNode.hidden = true; }
+function hideItemTooltip() { tooltipNode.hidden = true; tooltipNode.dataset.itemKey=''; }
 function ensureLootAudio() { const Audio = window.AudioContext || window.webkitAudioContext; if (!Audio) return null; try { const context = playRarityDing.context ??= new Audio(); if (context.state === 'suspended') context.resume(); return context; } catch { return null; } }
 function playRarityDing(rarity) {
   const context = ensureLootAudio();
@@ -976,10 +987,10 @@ window.addEventListener('pointermove', (event) => {
   const item = state.items.find((entry) => entry.uid === state.carried);
   if (!item) return;
   const pointerCell = gridCellFromPoint(event.clientX, event.clientY);
-  if (!pointerCell) return;
+  if (!pointerCell) { hideItemTooltip(); return; }
   const offset = state.pointerDragOffset ?? { x: 0, y: 0 }, next = placementAnchor(item, pointerCell.x - offset.x, pointerCell.y - offset.y);
-  if (next.x === state.selected.x && next.y === state.selected.y) return;
-  state.selected = next; renderBackpack();
+  if (next.x !== state.selected.x || next.y !== state.selected.y) { hideItemTooltip(); state.selected = next; renderBackpack(); }
+  updateCarriedTooltip(item);
 });
 window.addEventListener('pointerup', (event) => {
   if (state.pointerId !== null && event.pointerId !== state.pointerId) return;
