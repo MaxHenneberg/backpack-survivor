@@ -178,7 +178,8 @@ class Undercity extends Phaser.Scene {
       clock.style.setProperty('--cooldown-left', `${fraction * 100}%`);
       clock.style.setProperty('--clock-angle', `${fraction * 360}deg`);
       clock.classList.toggle('is-cooling', remaining > 0);
-      const timer = clock.querySelector('.cooldown-clock-time');
+      const timer = clock.parentElement.querySelector('.cooldown-clock-time[data-uid="'+item.uid+'"]');
+      if(!timer)continue;
       timer.textContent = remaining > 0 ? `${(remaining / 1000).toFixed(2)}s` : 'READY';
       timer.setAttribute('aria-label', remaining > 0 ? `Next shot in ${(remaining / 1000).toFixed(2)} seconds` : 'Ready to fire');
     }
@@ -607,7 +608,7 @@ function renderBackpack() {
       const level=Math.max(1,Math.min(ITEM_LEVEL_CAP,item.level??1));
       const intervalLabel = effectiveCooldown ? `${(effectiveCooldown / 1000).toFixed(2)}s / SHOT` : 'PASSIVE';
       const visual = def.shape ? ACTIVE_ITEM_SVG[def.shape] : def.icon;
-      const cooldownClock = def.kind === 'active' ? `<span class="cooldown-clock" data-uid="${item.uid}" aria-hidden="true"><span class="cooldown-clock-time">READY</span></span>` : '';
+      const cooldownClock = def.kind === 'active' ? `<span class="cooldown-clock" data-uid="${item.uid}" aria-hidden="true"></span><span class="cooldown-clock-time" data-uid="${item.uid}" aria-label="Ready to fire">READY</span>` : '';
       const upgradeTarget=isPreview?state.items.find((entry)=>entry.uid!==item.uid&&entry.itemId===item.itemId&&entry.x>=0&&cellsFor(entry).some((slot)=>previewCells.some((target)=>slot.x===target.x&&slot.y===target.y))&&(entry.level??1)<ITEM_LEVEL_CAP):null;
       cell.classList.add('has-item', def.kind, `rarity-${item.rarity ?? def.rarity}`);
       cell.style.setProperty('--item-color', rarity.color); if(upgradeTarget)cell.classList.add('upgrade-target-preview');
@@ -620,7 +621,7 @@ function renderBackpack() {
       cell.style.setProperty('--glyph-x',centerX+'%');cell.style.setProperty('--glyph-y',centerY+'%');cell.style.setProperty('--glyph-cols',String(glyphCols));cell.style.setProperty('--glyph-rows',String(glyphRows));
       const glyphStyle='--item-rotation:'+rotation*90+'deg';
       const footprintMap='<span class="item-footprint-map" aria-hidden="true">'+footprint.map(([fx,fy])=>'<i style="grid-column:'+(fx+1)+';grid-row:'+(fy+1)+'"></i>').join('')+'</span>';
-      cell.innerHTML = '<span class="item-name">'+def.name+'</span><span class="item-level-badge" aria-label="Level '+level+'"><span aria-hidden="true">★</span><b>'+level+'</b></span>'+footprintMap+'<span class="item-glyph'+(def.shape?' active-glyph':'')+'" style="'+glyphStyle+'">'+visual+'</span>'+cooldownClock+'<span class="item-cooldown">'+intervalLabel+'</span>';
+      cell.innerHTML = '<span class="item-name">'+def.name+'</span><span class="item-level-badge" aria-label="Level '+level+'"><span aria-hidden="true">★</span><b>'+level+'</b></span>'+footprintMap+'<span class="item-art-region"><span class="item-glyph'+(def.shape?' active-glyph':'')+'" style="'+glyphStyle+'">'+visual+'</span></span>'+cooldownClock+'<span class="item-cooldown">'+intervalLabel+'</span>';
       cell.setAttribute('aria-label', `${def.name}, ${rarity.label}, level ${level} of ${ITEM_LEVEL_CAP}, ${effectiveCooldown ? `cooldown ${ (effectiveCooldown / 1000).toFixed(2) } seconds between shots` : 'passive item'}. ${def.description} Column ${x + 1}, row ${y + 1}. Select to move.`); cell.dataset.uid = item.uid;
       cell.addEventListener('pointerenter', () => showItemTooltip(item, cell, upgradeTarget));
       cell.addEventListener('pointerleave', hideItemTooltip);

@@ -196,3 +196,13 @@
 .tooltip-passive span{color:#92eedb;font:9px var(--mono);text-align:right}
 .tooltip-no-passives{color:#9baabd;font-size:10px}
 .tooltip-stats{display:grid}
+/* Keep weapon artwork clear: the cooldown sweep sits behind a reserved art bay,
+   while its timer and firing interval occupy separate footer rows. */
+.item-footprint-map{inset:23px 7px 34px!important}
+.item-art-region{position:absolute;inset:23px 7px 34px;z-index:3;pointer-events:none}
+.pack-cell .item-glyph.active-glyph{left:var(--glyph-x)!important;top:var(--glyph-y)!important;width:min(82%,calc(var(--glyph-cols,1)*48px))!important;height:min(78%,calc(var(--glyph-rows,1)*42px))!important}
+.pack-cell .cooldown-clock{z-index:2!important}
+.pack-cell .cooldown-clock-time{position:absolute;left:50%;right:auto;top:auto;bottom:18px;transform:translateX(-50%);z-index:6;min-width:38px;padding:2px 5px;border:1px solid color-mix(in srgb,var(--item-color) 64%,#77849a);border-radius:999px;background:#070d17ed;color:#eaf3ff;font:600 9px var(--mono);letter-spacing:0;line-height:1.25;text-align:center;white-space:nowrap;box-shadow:0 0 7px color-mix(in srgb,var(--item-color) 18%,transparent);pointer-events:none}
+.pack-cell .item-cooldown{bottom:3px!important;left:2px!important;right:2px!important;z-index:7!important;font:8px var(--mono)!important;line-height:1.2!important;letter-spacing:0!important}
+.pack-cell .item-name{right:29px!important;font-size:11px!important;line-height:1.15!important}
+@media(max-width:410px){.item-footprint-map{inset:22px 5px 33px!important}.item-art-region{inset:22px 5px 33px}.pack-cell .item-glyph.active-glyph{width:min(86%,calc(var(--glyph-cols,1)*44px))!important;height:min(76%,calc(var(--glyph-rows,1)*38px))!important}.pack-cell .item-name{left:5px!important;right:27px!important;font-size:10px!important}.pack-cell .cooldown-clock-time{bottom:17px;font-size:8px}.pack-cell .item-cooldown{font-size:7.5px!important}}
