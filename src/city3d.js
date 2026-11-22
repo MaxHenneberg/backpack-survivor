@@ -143,9 +143,10 @@ export function lootSignGlyph(drop) {
   return 'passive-chip';
 }
 
-export function lootSignWorldCenter(camera,drop,bob=0) {
-  const anchor=[drop.x,drop.signHeight??drop.pickupHeight+260,drop.y+bob],right=billboardBasis(camera,anchor).right;
-  return anchor.map((value,index)=>value+right[index]*54);
+export function lootSignWorldCenter(drop) {
+  // Keep the pickup marker on the beam's vertical axis so the visual target
+  // and the floor pickup radius refer to the same point.
+  return [drop.x,drop.signHeight??drop.pickupHeight+260,drop.y];
 }
 
 function appendLootSignIcon(vertices,drop,center,right,up,color) {
@@ -163,13 +164,6 @@ function appendLootSignIcon(vertices,drop,center,right,up,color) {
     appendBillboardRect(vertices,center,right,up,0,0,5,20,color);
     appendBillboardRect(vertices,center,right,up,0,0,20,5,color);
   }
-}
-
-function appendGlowLootSignIcon(vertices,drop,center,right,up,color,alpha) {
-  const glyph=lootSignGlyph(drop);
-  if(glyph==='passive-chip'||glyph==='shield-kit')appendGlowBillboardHex(vertices,center,right,up,0,0,glyph==='passive-chip'?14:12,glyph==='passive-chip'?12:15,color,alpha);
-  const rects=glyph==='weapon'?[[0,0,25,11],[-5,-9,7,10],[17,3,16,3],[5,8,8,2]]:glyph==='passive-chip'?[[-14,0,6,2],[14,0,6,2],[0,13,2,5],[0,-13,2,5],[-6,0,2,8],[6,0,2,8]]:glyph==='shield-kit'?[[0,0,3,14],[0,0,13,3]]:[[0,0,5,20],[0,0,20,5]];
-  for(const [x,y,w,h] of rects)appendGlowBillboardRect(vertices,center,right,up,x,y,w,h,color,alpha);
 }
 
 function appendGlowPrism(vertices, x, z, profiles, color, sides=8, tint=hex(0x09131c)) {
@@ -284,6 +278,7 @@ export class CityBackdrop {
     this.glowAlpha=gl.getAttribLocation(glowProgram,'aAlpha');
     this.glowMatrix=gl.getUniformLocation(glowProgram,'uViewProjection');
     this.glowBuffer=gl.createBuffer();
+    this.lootSignBuffer=gl.createBuffer();
     this.meshCenter = null;
     this.mesh = new Float32Array();
     this.viewProjection = null;
@@ -319,6 +314,7 @@ export class CityBackdrop {
     gl.drawArrays(gl.TRIANGLES, 0, this.mesh.length / 6);
     this.renderActors(px,pz);
     this.renderLootGlow();
+    this.renderLootSigns();
   }
 
   setLoot(loot) { this.loot = loot; }
@@ -331,8 +327,8 @@ export class CityBackdrop {
     return {x:(ndcX*.5+.5)*1200,y:(1-(ndcY*.5+.5))*800,scale:Math.max(.42,Math.min(1.45,this.referenceDepth/clipW)),visible:Math.abs(ndcX)<1.2&&Math.abs(ndcY)<1.2};
   }
 
-  projectLootSign(drop,bob=0) {
-    const center=lootSignWorldCenter(this.cameraPosition,drop,bob);
+  projectLootSign(drop) {
+    const center=lootSignWorldCenter(drop);
     return this.project(center[0],center[2],center[1]);
   }
 
@@ -399,14 +395,6 @@ export class CityBackdrop {
         const a=side*Math.PI*2/8,b=(side+1)*Math.PI*2/8,inner=20,outer=24;
         appendQuad(vertices,[x+Math.cos(a)*inner,5,z+Math.sin(a)*inner],[x+Math.cos(a)*outer,5,z+Math.sin(a)*outer],[x+Math.cos(b)*outer,5,z+Math.sin(b)*outer],[x+Math.cos(b)*inner,5,z+Math.sin(b)*inner],colorLerp(hex(0x101927),tint,.7*pulse));
       }
-      // A camera-facing rectangular holo sign replaces the old floating diamond.
-      const bob=Math.sin(this.actorTime*3.5+drop.phase)*4;
-      const camera=[px,1600,pz+620],center=lootSignWorldCenter(camera,drop,bob),{right,up}=billboardBasis(camera,center);
-      const frame=colorLerp(tint,hex(0xffffff),.2+pulse*.24),plate=colorLerp(hex(0x06111b),tint,.12);
-      appendBillboardHex(vertices,center,right,up,0,0,38,28,plate);
-      appendBillboardHex(vertices,center,right,up,0,0,35,25,frame);
-      appendBillboardHex(vertices,center,right,up,0,0,32,22,plate);
-      appendLootSignIcon(vertices,drop,center,right,up,frame);
     }
     gl.bindBuffer(gl.ARRAY_BUFFER,this.dynamicBuffer);
     gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(vertices),gl.DYNAMIC_DRAW);
@@ -481,10 +469,9 @@ export class CityBackdrop {
         const mx=x+Math.cos(angle)*radius,mz=z+Math.sin(angle)*radius,size=3+Math.sin(this.actorTime*5+mote)*1.2;
         appendGlowPrism(vertices,mx,mz,[{y:y-size*2,radius:size,alpha:.55*(1-phase*.45)},{y:y+size*2,radius:size*.35,alpha:.8*(1-phase*.45)}],colorLerp(tint,hex(0xffffff),.65),6);
       }
-      const bob=Math.sin(this.actorTime*3.5+drop.phase)*4,center=lootSignWorldCenter(this.cameraPosition,drop,bob);
-      const {right,up}=billboardBasis(this.cameraPosition,center),frame=colorLerp(tint,hex(0xffffff),.3+pulse*.25);
-      appendGlowBillboardHex(vertices,center,right,up,0,0,42,32,frame,.1*pulse);
-      appendGlowLootSignIcon(vertices,drop,center,right,up,frame,.82*pulse);
+      const center=lootSignWorldCenter(drop);
+      const {right,up}=billboardBasis(this.cameraPosition,center),frame=colorLerp(tint,hex(0xffffff),.38);
+      appendGlowBillboardHex(vertices,center,right,up,0,0,42,32,frame,.16);
     }
     gl.useProgram(this.glowProgram);
     gl.uniformMatrix4fv(this.glowMatrix,false,this.viewProjection);
@@ -502,6 +489,29 @@ export class CityBackdrop {
     gl.drawArrays(gl.TRIANGLES,0,vertices.length/7);
     gl.depthMask(true);
     gl.disable(gl.BLEND);
+  }
+
+  renderLootSigns() {
+    if(!this.loot.length)return;
+    const gl=this.gl,vertices=[];
+    for(const drop of this.loot) {
+      const tint=hex(drop.tint),center=lootSignWorldCenter(drop);
+      const {right,up}=billboardBasis(this.cameraPosition,center);
+      const frame=colorLerp(tint,hex(0xffffff),.38),plate=colorLerp(hex(0x06111b),tint,.12);
+      appendBillboardHex(vertices,center,right,up,0,0,38,28,plate);
+      appendBillboardHex(vertices,center,right,up,0,0,35,25,frame);
+      appendBillboardHex(vertices,center,right,up,0,0,32,22,plate);
+      appendLootSignIcon(vertices,drop,center,right,up,frame);
+    }
+    gl.useProgram(this.program);
+    gl.uniformMatrix4fv(this.matrix,false,this.viewProjection);
+    gl.bindBuffer(gl.ARRAY_BUFFER,this.lootSignBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(vertices),gl.DYNAMIC_DRAW);
+    gl.enableVertexAttribArray(this.position);
+    gl.vertexAttribPointer(this.position,3,gl.FLOAT,false,24,0);
+    gl.enableVertexAttribArray(this.color);
+    gl.vertexAttribPointer(this.color,3,gl.FLOAT,false,24,12);
+    gl.drawArrays(gl.TRIANGLES,0,vertices.length/6);
   }
 
   rebuild(cx, cz) {
