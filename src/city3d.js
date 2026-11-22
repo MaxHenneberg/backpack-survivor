@@ -127,6 +127,15 @@ function appendGlowBillboardHex(vertices,center,right,up,x,y,radiusX,radiusY,col
   for(let index=0;index<6;index++)appendGlowTriangle(vertices,middle,points[index],points[(index+1)%6],color,alpha);
 }
 
+function appendGlowBillboardRect(vertices,center,right,up,x,y,width,height,color,alpha) {
+  const halfWidth=width/2,halfHeight=height/2;
+  appendGlowQuad(vertices,
+    billboardPoint(center,right,up,x-halfWidth,y-halfHeight),
+    billboardPoint(center,right,up,x+halfWidth,y-halfHeight),
+    billboardPoint(center,right,up,x+halfWidth,y+halfHeight),
+    billboardPoint(center,right,up,x-halfWidth,y+halfHeight),color,color,alpha,alpha);
+}
+
 export function lootSignGlyph(drop) {
   if(drop.itemKind==='active')return 'weapon';
   if(drop.kind==='kit'&&drop.itemId==='shieldKit')return 'shield-kit';
