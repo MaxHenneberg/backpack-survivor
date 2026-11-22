@@ -944,6 +944,19 @@ gridNode.addEventListener('keydown', (event) => {
   if (event.key === ' ' || event.key === 'Enter') { event.preventDefault(); handleBackpackConfirm(); }
   if (event.key === 'Escape') { event.preventDefault(); cancelCarried(); }
 });
+gridNode.addEventListener('click', (event) => {
+  // A carried preview deliberately ignores pointer events to prevent hover
+  // flicker. Its occupied cells are removed from the grid, so a click directly
+  // on an overlap can otherwise miss every cell-level placement handler.
+  if (!state.carried || state.suppressClick || event.target.closest('.pack-cell')) return;
+  const target = gridCellFromPoint(event.clientX, event.clientY);
+  if (!target) return;
+  const item = state.items.find((entry) => entry.uid === state.carried);
+  if (!item) return;
+  const anchor = placementAnchor(item, target.x, target.y);
+  state.selected = anchor;
+  if (placeCarried(anchor.x, anchor.y)) { state.pointerDragging = false; state.pointerDragOffset = null; }
+});
 window.addEventListener('pointermove', (event) => {
   const start = state.pointerStart;
   if (start && !state.carried && Math.hypot(event.clientX - start.clientX, event.clientY - start.clientY) >= 8) {
