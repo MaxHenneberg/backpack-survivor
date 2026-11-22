@@ -13,7 +13,7 @@ export const ITEMS = {
   overdrive: { id: 'overdrive', name: 'Overdrive SMG', kind: 'active', shape: 'smg', rarity: 'epic', color: '#c486ff', icon: 'ϟ', description: 'Sprays a tight three-round burst of quick bullets.', cooldown: 520, shot: { style: 'burst', speed: 600, trail: 9, width: 2, burstCount: 3, spread: .12 }, base: { damage: 8, cooldown: 520, range: 380 }, footprint: [[0, 0], [1, 0], [0, 1]] },
   railDriver: { id: 'railDriver', name: 'Rail Driver', kind: 'active', shape: 'railgun', rarity: 'legendary', color: '#ffbf58', icon: '╋', description: 'Sends a charged rail slug through up to three enemies.', cooldown: 1800, shot: { style: 'rail', speed: 880, trail: 34, width: 5, pierce: 2 }, base: { damage: 34, cooldown: 1800, range: 520 }, footprint: [[0, 0], [0, 1], [0, 2]] },
   novaLattice: { id: 'novaLattice', name: 'Nova Lattice', kind: 'active', weaponType: 'beam', shape: 'beam-array', rarity: 'legendary', color: '#ffbf58', icon: '✳', description: 'Splits into multiple damage-ticking beams. Extra projectiles add beams; cooldown speeds up their ticks.', cooldown: 820, shot: { style: 'beam', width: 4 }, base: { damage: 8, cooldown: 820, range: 560, projectiles: 2 }, footprint: [[0, 0], [0, 1], [0, 2]] },
-  gridfireLauncher: { id: 'gridfireLauncher', name: 'Gridfire Launcher', kind: 'active', weaponType: 'projectile', shape: 'missile-pod', rarity: 'legendary', color: '#ffbf58', icon: '➤', description: 'Launches a homing missile that leaves a bright red trail along its flight path.', cooldown: 1650, shot: { style: 'homing', projectileColor: '#ff174f', speed: 360, trail: 110, width: 4, turnRate: 3.2 }, base: { damage: 38, cooldown: 1650, range: 620 }, footprint: [[0, 0], [0, 1], [1, 1]] },
+  gridfireLauncher: { id: 'gridfireLauncher', name: 'Gridfire Launcher', kind: 'active', weaponType: 'projectile', shape: 'missile-pod', rarity: 'legendary', color: '#ffbf58', icon: '➤', description: 'Launches a homing missile that leaves a bright red trail along its flight path.', cooldown: 1650, shot: { style: 'homing', projectileColor: '#ff174f', speed: 360, trail: 110, width: 4, turnRate: 3.2, turnDelay: .32 }, base: { damage: 38, cooldown: 1650, range: 620 }, footprint: [[0, 0], [0, 1], [1, 1]] },
   hotCell: { id: 'hotCell', name: 'Hot Cell', kind: 'passive', rarity: 'common', color: '#b5c3d4', icon: '▥', description: 'Next to a weapon: increases its damage.', adjacency: { stat: 'damage', multiplier: 1.28 }, footprint: [[0, 0]] },
   scope: { id: 'scope', name: 'Ghost Scope', kind: 'passive', rarity: 'rare', color: '#59aaff', icon: '◎', description: 'Next to a weapon: reduces its cooldown.', adjacency: { stat: 'cooldown', multiplier: 0.75 }, footprint: [[0, 0]] },
   prism: { id: 'prism', name: 'Split Prism', kind: 'passive', rarity: 'epic', color: '#c486ff', icon: '◇', description: 'Next to a weapon: adds projectiles or beams.', adjacency: { stat: 'projectiles', add: 1 }, footprint: [[0, 0]] },
@@ -62,6 +62,33 @@ export function footprintIconAnchor(footprint) {
   if(width*height===footprint.length)return {x:width/2,y:height/2,shape:'rectangle'};
   const [x,y]=[...footprint].sort((a,b)=>a[1]-b[1]||a[0]-b[0])[0];
   return {x:x+.5,y:y+.5,shape:'irregular'};
+}
+
+export function footprintRenderAnchor(footprint,x,y) {
+  const [dx,dy]=[...footprint].sort((a,b)=>a[1]-b[1]||a[0]-b[0])[0]??[0,0];
+  return {x:x+dx,y:y+dy,originX:x,originY:y};
+}
+
+export function placementOrigin(item,x,y) {
+  const footprint=footprintFor(item),width=Math.max(...footprint.map(([cx])=>cx))+1,height=Math.max(...footprint.map(([,cy])=>cy))+1;
+  return {x:Math.max(0,Math.min(x,GRID.width-width)),y:Math.max(0,Math.min(y,GRID.height-height))};
+}
+
+export function advanceFootprintRotation(item,direction=1) {
+  return {...item,rotation:(((item.rotation??0)+(direction>0?1:3))%4)};
+}
+
+export function itemStateForFloorDrop(item) {
+  return {level:item.level,rotation:item.rotation,stats:item.stats};
+}
+
+export function restoreItemFromFloorDrop(drop) {
+  return {...(drop.itemState??{}),uid:drop.uid,itemId:drop.itemId,rarity:drop.rarity,x:-1,y:-1};
+}
+
+export function formatStatWithDelta(current,base,format=(value)=>String(value)) {
+  const difference=current-base;
+  return format(current)+(Math.abs(difference)>.0001?' ('+(difference>0?'+':'−')+format(Math.abs(difference))+')':'');
 }
 
 export function overlappingSameItems(items,item,x,y) {

@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import './style.css';
 import { CityBackdrop } from './city3d.js';
-import { ITEMS, GRID, ITEM_LEVEL_CAP, RARITIES, STARTING_ITEMS, adjacentTo, canPlace, canSwap, cellsFor, footprintClipPath, footprintFor, footprintIconAnchor, getWeaponStats, overlappingSameItems, projectileFanAngles, rollLoot, rollLootFromRarity } from './items.js';
+import { ITEMS, GRID, ITEM_LEVEL_CAP, RARITIES, STARTING_ITEMS, adjacentTo, advanceFootprintRotation, canPlace, canSwap, cellsFor, footprintClipPath, footprintFor, footprintIconAnchor, footprintRenderAnchor, formatStatWithDelta, getWeaponStats, itemStateForFloorDrop, overlappingSameItems, placementOrigin, projectileFanAngles, restoreItemFromFloorDrop, rollLoot, rollLootFromRarity } from './items.js';
 import { META_PERKS, loadProgression, saveProgression } from './progression.js';
 
 const PLAYER_SHIELD_CAP=150;
@@ -186,7 +186,7 @@ class Undercity extends Phaser.Scene {
   }
   updateLootProjection() {
     for (const loot of this.floorLoot) {
-      const point = this.cityBackdrop.project(loot.x, loot.y, loot.pickupHeight);
+      const point = this.cityBackdrop.projectLootSign(loot);
       loot.screenX = point.x; loot.screenY = point.y;
     }
   }
@@ -383,7 +383,7 @@ class Undercity extends Phaser.Scene {
       for(let burst=0;burst<burstCount;burst++) for(let i=0;i<stats.projectiles;i++) {
         const homingTarget=shot.style==='homing'?targets[(i+burst)%targets.length].enemy:target;
         const aimAngle=shot.style==='homing'?Phaser.Math.Angle.Between(this.player.x,this.player.y,homingTarget.x,homingTarget.y):angle;
-        const fanSpread=shot.style==='homing'?.3:.18;
+        const fanSpread=shot.style==='homing'?.48:.18;
         const shotAngle=projectileFanAngles(aimAngle,stats.projectiles,fanSpread)[i]+(burstCount>1?(burst-(burstCount-1)/2)*(shot.spread??.08):0)+(Math.random()-.5)*.025;
         this.time.delayedCall(burst*62,()=>this.launchBullet(shotAngle,stats,shot,definition,homingTarget));
       }
@@ -418,14 +418,14 @@ class Undercity extends Phaser.Scene {
   }
   launchBullet(angle,stats,shot,definition,target=null) {
     const tint=Number.parseInt((shot.projectileColor??definition.color).slice(1),16),line=this.add.graphics().setDepth(15);
-    this.shots.push({x:this.player.x,y:this.player.y-7,vx:Math.cos(angle),vy:Math.sin(angle),damage:stats.damage,range:stats.range,travelled:0,graphic:line,color:tint,speed:shot.speed,trail:shot.trail,width:shot.width,style:shot.style,target,turnRate:shot.turnRate??0,age:0,trailPoints:shot.style==='homing'?[{x:this.player.x,y:this.player.y-7}]:null,pierce:shot.pierce??0,hitEnemies:new Set()});
+    this.shots.push({x:this.player.x,y:this.player.y-7,vx:Math.cos(angle),vy:Math.sin(angle),damage:stats.damage,range:stats.range,travelled:0,graphic:line,color:tint,speed:shot.speed,trail:shot.trail,width:shot.width,style:shot.style,target,turnRate:shot.turnRate??0,turnDelay:shot.turnDelay??0,age:0,trailPoints:shot.style==='homing'?[{x:this.player.x,y:this.player.y-7}]:null,pierce:shot.pierce??0,hitEnemies:new Set()});
   }
   updateShots(dt) {
     for (const shot of [...this.shots]) {
       if(shot.style==='homing') {
         shot.age+=dt;
         if(!shot.target?.active)shot.target=this.enemies.filter((enemy)=>enemy.active).sort((a,b)=>Phaser.Math.Distance.Between(shot.x,shot.y,a.x,a.y)-Phaser.Math.Distance.Between(shot.x,shot.y,b.x,b.y))[0]??null;
-        if(shot.target) {
+        if(shot.target&&shot.age>=shot.turnDelay) {
           const heading=Phaser.Math.Angle.RotateTo(Math.atan2(shot.vy,shot.vx),Phaser.Math.Angle.Between(shot.x,shot.y,shot.target.x,shot.target.y),shot.turnRate*dt);
           shot.vx=Math.cos(heading);shot.vy=Math.sin(heading);
         }
@@ -457,16 +457,17 @@ class Undercity extends Phaser.Scene {
       } else if(shot.travelled>shot.range){shot.graphic.destroy();this.shots.splice(this.shots.indexOf(shot),1);}
     }
   }
-  dropLootReplacement(item) { const rarity = item.rarity ?? ITEMS[item.itemId].rarity, point = this.streetDropPoint(); this.addFloorLoot(item.itemId, rarity, point.x, point.y); }
+  dropLootReplacement(item) { const rarity = item.rarity ?? ITEMS[item.itemId].rarity, point = this.streetDropPoint(); this.addFloorLoot(item.itemId, rarity, point.x, point.y, 'item', itemStateForFloorDrop(item)); }
   streetDropPoint() {
     const horizontal = Math.random() < .5, sign = Math.random() < .5 ? -1 : 1;
     const along = sign * (78 + Math.random() * 92), across = (Math.random() - .5) * 24;
     if (horizontal) return { x: this.player.x + along, y: Math.round(this.player.y / 280) * 280 + across };
     return { x: Math.round(this.player.x / 280) * 280 + across, y: this.player.y + along };
   }
-  addFloorLoot(itemId, rarity, x, y, kind='item') {
+  addFloorLoot(itemId, rarity, x, y, kind='item', itemState={}) {
     const quality = RARITIES[rarity], tint = Number.parseInt(quality.color.slice(1), 16);
-    const drop = { uid: `floor-${++state.lootIndex}`, itemId, rarity, kind, itemKind: ITEMS[itemId].kind, x, y, pickupHeight: DRONE_FLIGHT_HEIGHT, tint, phase: Math.random() * Math.PI * 2 };
+    const pickupHeight=DRONE_FLIGHT_HEIGHT;
+    const drop = { uid: `floor-${++state.lootIndex}`, itemId, rarity, kind, itemKind: ITEMS[itemId].kind, x, y, pickupHeight, signHeight:pickupHeight+260, itemState, tint, phase: Math.random() * Math.PI * 2 };
     this.floorLoot.push(drop);
     playRarityDing(rarity);
     return drop;
@@ -548,7 +549,7 @@ class Undercity extends Phaser.Scene {
     this.playLootPickupEffect(drop);
     this.nearbyLoot = null;
     this.floorLoot.splice(this.floorLoot.indexOf(drop), 1);
-    const item = { uid: drop.uid, itemId: drop.itemId, rarity: drop.rarity, x: -1, y: -1 };
+    const item = restoreItemFromFloorDrop(drop);
     state.items.push(item); state.heldLoot = item.uid; state.carried = item.uid; state.paused = true; state.backpackFocus = true;
     const open = findOpenCell(item); if (open) state.selected = open;
     document.querySelector('#loot-prompt').hidden = true;
@@ -586,19 +587,22 @@ function renderBackpack() {
   for (let i = 0; i < GRID.width * GRID.height; i++) {
     const x = i % GRID.width, y = Math.floor(i / GRID.width), carriedItem = state.items.find((entry) => entry.uid === state.carried);
     const previewCells = carriedItem ? cellsFor(carriedItem, state.selected.x, state.selected.y) : [];
-    const isPreview = Boolean(carriedItem && previewCells.some((slot) => slot.x === x && slot.y === y));
+    const previewRenderCell=carriedItem?footprintRenderAnchor(footprintFor(carriedItem),state.selected.x,state.selected.y):null;
+    const isPreviewCell = Boolean(carriedItem && previewCells.some((slot) => slot.x === x && slot.y === y));
+    const isPreview = Boolean(previewRenderCell && previewRenderCell.x===x && previewRenderCell.y===y);
     const occupiedItem = gridItemAt(x, y, carriedItem?.uid);
     const coveredByPreview = Boolean(carriedItem && occupiedItem && cellsFor(occupiedItem).some((cell) => previewCells.some((slot) => slot.x === cell.x && slot.y === cell.y)));
     const item = isPreview ? carriedItem : coveredByPreview ? null : occupiedItem;
     if (coveredByPreview && !isPreview) continue;
-    if (isPreview && (x !== state.selected.x || y !== state.selected.y)) continue;
+    if (isPreviewCell && !isPreview) continue;
+    if (carriedItem && x===state.selected.x && y===state.selected.y && !isPreviewCell && !occupiedItem) continue;
     if (item && !isPreview && (item.x !== x || item.y !== y)) continue;
-    if (!item && carriedItem && previewCells.some((slot) => slot.x === x && slot.y === y) && !isPreview) continue;
-    const cell = document.createElement('button'); cell.type = 'button'; cell.className = 'pack-cell'; cell.setAttribute('role', 'gridcell'); cell.dataset.x = x; cell.dataset.y = y; cell.setAttribute('aria-label', item ? `${ITEMS[item.itemId].name}, column ${x + 1}, row ${y + 1}` : `Empty, column ${x + 1}, row ${y + 1}`);
-    cell.style.gridColumn = `${x + 1} / span 1`; cell.style.gridRow = `${y + 1} / span 1`; cell.dataset.width = '1'; cell.dataset.height = '1';
+    const cellX=isPreview?state.selected.x:x,cellY=isPreview?state.selected.y:y;
+    const cell = document.createElement('button'); cell.type = 'button'; cell.className = 'pack-cell'; cell.setAttribute('role', 'gridcell'); cell.dataset.x = cellX; cell.dataset.y = cellY; cell.setAttribute('aria-label', item ? `${ITEMS[item.itemId].name}, column ${cellX + 1}, row ${cellY + 1}` : `Empty, column ${cellX + 1}, row ${cellY + 1}`);
+    cell.style.gridColumn = `${cellX + 1} / span 1`; cell.style.gridRow = `${cellY + 1} / span 1`; cell.dataset.width = '1'; cell.dataset.height = '1';
     if (item) {
       const footprint = footprintFor(item), width = Math.max(...footprint.map(([dx]) => dx)) + 1, height = Math.max(...footprint.map(([, dy]) => dy)) + 1;
-      cell.style.gridColumn = `${x + 1} / span ${width}`; cell.style.gridRow = `${y + 1} / span ${height}`; cell.dataset.width = String(width); cell.dataset.height = String(height);
+      cell.style.gridColumn = `${cellX + 1} / span ${width}`; cell.style.gridRow = `${cellY + 1} / span ${height}`; cell.dataset.width = String(width); cell.dataset.height = String(height);
       const def = ITEMS[item.itemId], rarity = RARITIES[item.rarity ?? def.rarity], effectiveCooldown = def.kind === 'active' ? getEffectiveWeaponStats(state.items, item).cooldown : 0;
       cell.style.setProperty('--footprint-width', String(width)); cell.style.setProperty('--footprint-height', String(height));
       const center=footprint.reduce((sum,[fx,fy])=>({x:sum.x+fx+.5,y:sum.y+fy+.5}),{x:0,y:0});
@@ -624,18 +628,18 @@ function renderBackpack() {
       const glyphStyle='--item-rotation:'+rotation*90+'deg';
       const footprintMap='<span class="item-footprint-map" aria-hidden="true">'+footprint.map(([fx,fy])=>'<i style="grid-column:'+(fx+1)+';grid-row:'+(fy+1)+'"></i>').join('')+'</span>';
       cell.innerHTML = '<span class="item-name">'+def.name+'</span><span class="item-level-badge" aria-label="Level '+level+'"><span aria-hidden="true">★</span><b>'+level+'</b></span>'+footprintMap+'<span class="item-art-region"><span class="item-glyph'+(def.shape?' active-glyph':'')+'" style="'+glyphStyle+'">'+visual+'</span></span>'+cooldownClock+'<span class="item-cooldown">'+intervalLabel+'</span>';
-      cell.setAttribute('aria-label', `${def.name}, ${rarity.label}, level ${level} of ${ITEM_LEVEL_CAP}, ${effectiveCooldown ? `cooldown ${ (effectiveCooldown / 1000).toFixed(2) } seconds between shots` : 'passive item'}. ${def.description} Column ${x + 1}, row ${y + 1}. Select to move.`); cell.dataset.uid = item.uid;
+      cell.setAttribute('aria-label', `${def.name}, ${rarity.label}, level ${level} of ${ITEM_LEVEL_CAP}, ${effectiveCooldown ? `cooldown ${ (effectiveCooldown / 1000).toFixed(2) } seconds between shots` : 'passive item'}. ${def.description} Column ${cellX + 1}, row ${cellY + 1}. Select to move.`); cell.dataset.uid = item.uid;
       cell.addEventListener('pointerenter', () => showItemTooltip(item, cell, upgradeTarget));
       cell.addEventListener('pointerleave', hideItemTooltip);
       cell.addEventListener('focus', () => { state.backpackFocus = true; showItemTooltip(item, cell, upgradeTarget); });
       cell.addEventListener('blur', hideItemTooltip);
       if (isPreview) cell.classList.add('is-carried');
     }
-    if (isPreview || item ? (isPreview ? previewCells : cellsFor(item)).some((slot) => slot.x === state.selected.x && slot.y === state.selected.y) : state.selected.x === x && state.selected.y === y) cell.classList.add('is-cursor');
+    if (isPreview || (item ? cellsFor(item).some((slot) => slot.x === state.selected.x && slot.y === state.selected.y) : state.selected.x === x && state.selected.y === y)) cell.classList.add('is-cursor');
     cell.addEventListener('focus', () => { state.backpackFocus = true; });
     cell.addEventListener('blur', () => { setTimeout(() => { state.backpackFocus = gridNode.contains(document.activeElement); }, 0); });
-    cell.addEventListener('click', () => { if (state.suppressClick) { state.suppressClick = false; return; } state.backpackFocus = true; state.selected = { x, y }; const here = gridItemAt(x, y); if (state.carried) placeCarried(x, y); else if (here) pickupItem(here.uid); else renderBackpack(); });
-    cell.addEventListener('pointerdown', (event) => { if (event.button !== 0 || !cell.dataset.uid) return; state.pointerStart = { uid: cell.dataset.uid, x, y, clientX: event.clientX, clientY: event.clientY }; });
+    cell.addEventListener('click', () => { if (state.suppressClick) { state.suppressClick = false; return; } state.backpackFocus = true; state.selected = { x:cellX, y:cellY }; const here = gridItemAt(cellX, cellY); if (state.carried) placeCarried(cellX, cellY); else if (here) pickupItem(here.uid); else renderBackpack(); });
+    cell.addEventListener('pointerdown', (event) => { if (event.button !== 0 || !cell.dataset.uid) return; state.pointerStart = { uid: cell.dataset.uid, x:cellX, y:cellY, clientX: event.clientX, clientY: event.clientY }; });
     gridNode.append(cell);
   }
   const placedCount = state.items.filter((item) => item.x >= 0).reduce((count, item) => count + cellsFor(item).length, 0);
@@ -714,9 +718,9 @@ function cancelCarried() {
   state.carried = null; resumeAfterInventoryAction(); hideItemTooltip(); renderBackpack(); returnFocusToGame(); showToast('MOVE CANCELLED');
 }
 function handleBackpackConfirm() { const here = gridItemAt(state.selected.x, state.selected.y); if (state.carried) placeCarried(state.selected.x, state.selected.y); else if (here) pickupItem(here.uid); }
-function placementAnchor(item, x, y) { const footprint = footprintFor(item), width = Math.max(...footprint.map(([cx]) => cx)) + 1, height = Math.max(...footprint.map(([, cy]) => cy)) + 1; return { x: clamp(x, 0, GRID.width - width), y: clamp(y, 0, GRID.height - height) }; }
+function placementAnchor(item, x, y) { return placementOrigin(item,x,y); }
 function moveGrid(dx, dy) { const item = state.items.find((entry) => entry.uid === state.carried); if (item) state.selected = placementAnchor(item, state.selected.x + dx, state.selected.y + dy); else { state.selected.x = clamp(state.selected.x + dx, 0, GRID.width - 1); state.selected.y = clamp(state.selected.y + dy, 0, GRID.height - 1); } renderBackpack(); focusSelectedCell(); }
-function rotateCarried(direction) { const item = state.items.find((entry) => entry.uid === state.carried); if (!item) return false; const footprint = footprintFor(item); if (footprint.length < 2) return false; item.rotation = ((item.rotation ?? 0) + (direction > 0 ? 1 : 3)) % 4; const rotated = footprintFor(item); state.selected.x = clamp(state.selected.x, 0, GRID.width - Math.max(...rotated.map(([x]) => x)) - 1); state.selected.y = clamp(state.selected.y, 0, GRID.height - Math.max(...rotated.map(([, y]) => y)) - 1); renderBackpack(); focusSelectedCell(); showToast(`ROTATED ${ITEMS[item.itemId].name.toUpperCase()} · ${item.rotation * 90}°`); return true; }
+function rotateCarried(direction) { const item = state.items.find((entry) => entry.uid === state.carried); if (!item) return false; const footprint = footprintFor(item); if (footprint.length < 2) return false; item.rotation = advanceFootprintRotation(item,direction).rotation; state.selected=placementAnchor(item,state.selected.x,state.selected.y); renderBackpack(); focusSelectedCell(); showToast(`ROTATED ${ITEMS[item.itemId].name.toUpperCase()} · ${item.rotation * 90}°`); return true; }
 function renderMetaUpgrades() {
   const list=document.querySelector('#meta-perk-list');
   list.replaceChildren();
@@ -764,7 +768,13 @@ function tooltipStatValues(item,items=state.items) {
   const definition=ITEMS[item.itemId];
   if(definition.kind==='active') {
     const stats=getEffectiveWeaponStats(items,item);
-    return {damage:String(Math.round(stats.damage*10)/10),projectiles:String(stats.projectiles),cooldown:(stats.cooldown/1000).toFixed(2)+'s'};
+    const neighboringPassives=items.filter((entry)=>entry.uid!==item.uid&&entry.x>=0&&ITEMS[entry.itemId].kind==='passive'&&adjacentTo(item,entry));
+    const withoutPassives=getEffectiveWeaponStats(items.filter((entry)=>!neighboringPassives.includes(entry)),item);
+    return {
+      damage:formatStatWithDelta(stats.damage,withoutPassives.damage,value=>String(Math.round(value*10)/10)),
+      projectiles:formatStatWithDelta(stats.projectiles,withoutPassives.projectiles,String),
+      cooldown:formatStatWithDelta(stats.cooldown,withoutPassives.cooldown,value=>(value/1000).toFixed(2)+'s'),
+    };
   }
   const values={damage:'—',projectiles:'—',cooldown:'—'},adjacency=definition.adjacency;
   if(!adjacency)return values;
