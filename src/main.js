@@ -624,6 +624,7 @@ function renderBackpack() {
       const upgradeTarget=isPreview?overlappingSameItems(state.items,item,state.selected.x,state.selected.y).find((entry)=>(entry.level??1)<ITEM_LEVEL_CAP)??null:null;
       const targetKeys = new Set(previewCells.map((slot) => `${slot.x},${slot.y}`));
       const overlappingCells = new Set(state.items.filter((entry) => entry.uid !== item.uid && entry.x >= 0).flatMap((entry) => cellsFor(entry).filter((slot) => targetKeys.has(`${slot.x},${slot.y}`)).map((slot) => `${slot.x},${slot.y}`)));
+      const upgradeCells = new Set(upgradeTarget ? cellsFor(upgradeTarget).filter((slot) => targetKeys.has(`${slot.x},${slot.y}`)).map((slot) => `${slot.x},${slot.y}`) : []);
       cell.classList.add('has-item', def.kind, `rarity-${item.rarity ?? def.rarity}`);
       cell.style.setProperty('--item-color', rarity.color); if(upgradeTarget)cell.classList.add('upgrade-target-preview');
       if (isPreview) {
@@ -633,7 +634,7 @@ function renderBackpack() {
       const glyphAnchor=footprintIconAnchor(footprint);
       const glyphCols=glyphAnchor.shape==='irregular'?1:width,glyphRows=glyphAnchor.shape==='irregular'?1:height;
       cell.style.setProperty('--glyph-x',(glyphAnchor.x/width*100)+'%');cell.style.setProperty('--glyph-y',(glyphAnchor.y/height*100)+'%');cell.style.setProperty('--glyph-cols',String(glyphCols));cell.style.setProperty('--glyph-rows',String(glyphRows));
-      const footprintMap='<span class="item-footprint-map" aria-hidden="true">'+footprint.map(([fx,fy])=>'<i'+(overlappingCells.has(`${state.selected.x+fx},${state.selected.y+fy}`)?' class="is-overlap"':'')+' style="grid-column:'+(fx+1)+';grid-row:'+(fy+1)+'"></i>').join('')+'</span>';
+      const footprintMap='<span class="item-footprint-map" aria-hidden="true">'+footprint.map(([fx,fy])=>{const key=`${state.selected.x+fx},${state.selected.y+fy}`,marker=upgradeCells.has(key)?'is-upgrade':overlappingCells.has(key)?'is-overlap':'';return '<i'+(marker?' class="'+marker+'"':'')+' style="grid-column:'+(fx+1)+';grid-row:'+(fy+1)+'"></i>';}).join('')+'</span>';
       cell.innerHTML = '<span class="item-name">'+def.name+'</span><span class="item-level-badge" aria-label="Level '+level+'"><span aria-hidden="true">★</span><b>'+level+'</b></span>'+footprintMap+'<span class="item-art-region"><span class="item-glyph'+(def.shape?' active-glyph':'')+'" aria-hidden="true">'+visual+'</span></span>'+cooldownClock+'<span class="item-cooldown">'+intervalLabel+'</span>';
       cell.setAttribute('aria-label', `${def.name}, ${rarity.label}, level ${level} of ${ITEM_LEVEL_CAP}, ${effectiveCooldown ? `cooldown ${ (effectiveCooldown / 1000).toFixed(2) } seconds between shots` : 'passive item'}. ${def.description} Column ${cellX + 1}, row ${cellY + 1}. Select to move.`); cell.dataset.uid = item.uid;
       cell.addEventListener('pointerenter', () => showItemTooltip(item, cell, upgradeTarget));
@@ -946,18 +947,24 @@ gridNode.addEventListener('keydown', (event) => {
   if (event.key === 'Escape') { event.preventDefault(); cancelCarried(); }
 });
 gridNode.addEventListener('click', (event) => {
-  // A carried preview deliberately ignores pointer events to prevent hover
-  // flicker. Its occupied cells are removed from the grid, so a click directly
-  // on an overlap can otherwise miss every cell-level placement handler.
-  if (!state.carried || state.suppressClick || event.target.closest('.pack-cell')) return;
+  // Pointer capture keeps drag events stable, but it can retarget a normal
+  // click to the grid itself. Handle both pickup and placement at this level.
+  if (state.suppressClick) { state.suppressClick = false; return; }
+  if (event.target instanceof Element && event.target.closest('.pack-cell')) return;
   const target = gridCellFromPoint(event.clientX, event.clientY);
   if (!target) return;
-  const item = state.items.find((entry) => entry.uid === state.carried);
-  if (!item) return;
-  const offset = state.pointerDragOffset ?? { x: 0, y: 0 };
-  const anchor = placementAnchor(item, target.x - offset.x, target.y - offset.y);
-  state.selected = anchor;
-  if (placeCarried(anchor.x, anchor.y)) { state.pointerDragging = false; state.pointerDragOffset = null; }
+  if (state.carried) {
+    const item = state.items.find((entry) => entry.uid === state.carried);
+    if (!item) return;
+    const offset = state.pointerDragOffset ?? { x: 0, y: 0 };
+    const anchor = placementAnchor(item, target.x - offset.x, target.y - offset.y);
+    state.selected = anchor;
+    if (placeCarried(anchor.x, anchor.y)) { state.pointerDragging = false; state.pointerDragOffset = null; }
+    return;
+  }
+  const here = gridItemAt(target.x, target.y);
+  if (here) { state.selected = { x: here.x, y: here.y }; pickupItem(here.uid, { x: target.x - here.x, y: target.y - here.y }); }
+  else { state.selected = target; renderBackpack(); }
 });
 window.addEventListener('pointermove', (event) => {
   const start = state.pointerStart;
