@@ -11,6 +11,7 @@ const gridNode = document.querySelector('#backpack-grid');
 const tooltipNode = document.querySelector('#item-tooltip');
 const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
 const DRONE_FLIGHT_HEIGHT = 760;
+const PASSIVE_ITEM_ICON = '<svg viewBox="0 0 40 40" aria-hidden="true"><path d="M20 3 35 11.5v17L20 37 5 28.5v-17L20 3Z" fill="none" stroke="currentColor" stroke-width="2.5"/><path d="m20 11 8 4.5v9L20 29l-8-4.5v-9L20 11Z" fill="currentColor" opacity=".72"/><circle cx="20" cy="20" r="3" fill="#f4ffff"/></svg>';
 const ACTIVE_ITEM_SVG = {
   sidearm: '<svg viewBox="0 0 48 36" aria-hidden="true"><path d="M4 10h23l5 4-3 8H17l-2 10H8l2-10H4z"/><path d="M27 11l4-5h10v4H32l-1 5z"/><path d="M7 8h15v2H7z" opacity=".55"/></svg>',
   carbine: '<svg viewBox="0 0 56 36" aria-hidden="true"><path d="M3 13h9l4-4h18l5 4h13v5H38l-3 5H18l-3-4H3z"/><path d="M38 12h15v2H38z"/><path d="M22 23h7l-2 9h-6z"/><path d="M7 11V7h6v6z" opacity=".7"/></svg>',
@@ -178,10 +179,6 @@ class Undercity extends Phaser.Scene {
       clock.style.setProperty('--cooldown-left', `${fraction * 100}%`);
       clock.style.setProperty('--clock-angle', `${fraction * 360}deg`);
       clock.classList.toggle('is-cooling', remaining > 0);
-      const timer = clock.parentElement.querySelector('.cooldown-clock-time[data-uid="'+item.uid+'"]');
-      if(!timer)continue;
-      timer.textContent = remaining > 0 ? `${(remaining / 1000).toFixed(2)}s` : 'READY';
-      timer.setAttribute('aria-label', remaining > 0 ? `Next shot in ${(remaining / 1000).toFixed(2)} seconds` : 'Ready to fire');
     }
   }
   updateLootProjection() {
@@ -610,9 +607,9 @@ function renderBackpack() {
       cell.style.setProperty('--clock-x',centerX+'%');cell.style.setProperty('--clock-y',centerY+'%');
       const clip=footprintClipPath(footprint);cell.style.setProperty('--footprint-clip',clip);
       const level=Math.max(1,Math.min(ITEM_LEVEL_CAP,item.level??1));
-      const intervalLabel = effectiveCooldown ? `${(effectiveCooldown / 1000).toFixed(2)}s / SHOT` : 'PASSIVE';
-      const visual = def.shape ? ACTIVE_ITEM_SVG[def.shape] : def.icon;
-      const cooldownClock = def.kind === 'active' ? `<span class="cooldown-clock" data-uid="${item.uid}" aria-hidden="true"></span><span class="cooldown-clock-time" data-uid="${item.uid}" aria-label="Ready to fire">READY</span>` : '';
+      const intervalLabel = def.kind === 'passive' ? 'PASSIVE' : '';
+      const visual = def.shape ? ACTIVE_ITEM_SVG[def.shape] : def.kind === 'passive' ? PASSIVE_ITEM_ICON : def.icon;
+      const cooldownClock = def.kind === 'active' ? `<span class="cooldown-clock" data-uid="${item.uid}" aria-hidden="true"></span>` : '';
       const upgradeTarget=isPreview?overlappingSameItems(state.items,item,state.selected.x,state.selected.y).find((entry)=>(entry.level??1)<ITEM_LEVEL_CAP)??null:null;
       cell.classList.add('has-item', def.kind, `rarity-${item.rarity ?? def.rarity}`);
       cell.style.setProperty('--item-color', rarity.color); if(upgradeTarget)cell.classList.add('upgrade-target-preview');
@@ -621,13 +618,11 @@ function renderBackpack() {
         const blockers = state.items.filter((entry) => entry.uid !== item.uid && entry.x >= 0 && cellsFor(entry).some((slot) => targetKeys.has(`${slot.x},${slot.y}`)));
         cell.classList.add('is-carried', 'is-placement-preview', blockers.length ? 'placement-replacing' : canPlace(state.items, item.uid, state.selected.x, state.selected.y) ? 'placement-valid' : 'placement-invalid');
       }
-      const rotation=(item.rotation??0)%4;
       const glyphAnchor=footprintIconAnchor(footprint);
-      const glyphCols=glyphAnchor.shape==='irregular'?1:rotation%2?height:width,glyphRows=glyphAnchor.shape==='irregular'?1:rotation%2?width:height;
+      const glyphCols=glyphAnchor.shape==='irregular'?1:width,glyphRows=glyphAnchor.shape==='irregular'?1:height;
       cell.style.setProperty('--glyph-x',(glyphAnchor.x/width*100)+'%');cell.style.setProperty('--glyph-y',(glyphAnchor.y/height*100)+'%');cell.style.setProperty('--glyph-cols',String(glyphCols));cell.style.setProperty('--glyph-rows',String(glyphRows));
-      const glyphStyle='--item-rotation:'+rotation*90+'deg';
       const footprintMap='<span class="item-footprint-map" aria-hidden="true">'+footprint.map(([fx,fy])=>'<i style="grid-column:'+(fx+1)+';grid-row:'+(fy+1)+'"></i>').join('')+'</span>';
-      cell.innerHTML = '<span class="item-name">'+def.name+'</span><span class="item-level-badge" aria-label="Level '+level+'"><span aria-hidden="true">★</span><b>'+level+'</b></span>'+footprintMap+'<span class="item-art-region"><span class="item-glyph'+(def.shape?' active-glyph':'')+'" style="'+glyphStyle+'">'+visual+'</span></span>'+cooldownClock+'<span class="item-cooldown">'+intervalLabel+'</span>';
+      cell.innerHTML = '<span class="item-name">'+def.name+'</span><span class="item-level-badge" aria-label="Level '+level+'"><span aria-hidden="true">★</span><b>'+level+'</b></span>'+footprintMap+'<span class="item-art-region"><span class="item-glyph'+(def.shape?' active-glyph':'')+'" aria-hidden="true">'+visual+'</span></span>'+cooldownClock+'<span class="item-cooldown">'+intervalLabel+'</span>';
       cell.setAttribute('aria-label', `${def.name}, ${rarity.label}, level ${level} of ${ITEM_LEVEL_CAP}, ${effectiveCooldown ? `cooldown ${ (effectiveCooldown / 1000).toFixed(2) } seconds between shots` : 'passive item'}. ${def.description} Column ${cellX + 1}, row ${cellY + 1}. Select to move.`); cell.dataset.uid = item.uid;
       cell.addEventListener('pointerenter', () => showItemTooltip(item, cell, upgradeTarget));
       cell.addEventListener('pointerleave', hideItemTooltip);
@@ -643,7 +638,10 @@ function renderBackpack() {
     gridNode.append(cell);
   }
   const placedCount = state.items.filter((item) => item.x >= 0).reduce((count, item) => count + cellsFor(item).length, 0);
-  document.querySelector('#item-count').innerHTML = `${String(placedCount).padStart(2, '0')} <span>/ 09 SLOTS</span>`;
+  document.querySelector('#item-count').innerHTML = `${String(placedCount).padStart(2, '0')} <span>/ ${String(GRID.width * GRID.height).padStart(2, '0')} SLOTS</span>`;
+  document.querySelector('#inventory-size-label').textContent = `${GRID.width * GRID.height} SLOT INVENTORY`;
+  document.querySelector('#inventory-grid-size').textContent = `${GRID.width} × ${GRID.height}`;
+  gridNode.setAttribute('aria-label', `${GRID.width} by ${GRID.height} equipped inventory`);
   renderInventorySale();
 }
 function focusSelectedCell() { const button = [...gridNode.querySelectorAll('.pack-cell')].find((cell) => { const x = Number(cell.dataset.x), y = Number(cell.dataset.y); return state.selected.x >= x && state.selected.x < x + Number(cell.dataset.width) && state.selected.y >= y && state.selected.y < y + Number(cell.dataset.height); }); button?.focus({ preventScroll: true }); }

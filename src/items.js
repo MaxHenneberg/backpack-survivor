@@ -36,7 +36,7 @@ export const STARTING_ITEMS = [
   { uid: 't-cell', itemId: 'hotCell', x: 0, y: 1 },
 ];
 
-export const GRID = { width: 3, height: 3 };
+export const GRID = { width: 4, height: 4 };
 
 export function rollLoot(random = Math.random) {
   const rarities = Object.keys(RARITIES);
