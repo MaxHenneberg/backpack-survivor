@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import './style.css';
 import { CityBackdrop } from './city3d.js';
-import { ITEMS, GRID, ITEM_LEVEL_CAP, RARITIES, STARTING_ITEMS, adjacentTo, canPlace, canSwap, cellsFor, footprintClipPath, footprintFor, getWeaponStats, projectileFanAngles, rollLoot, rollLootFromRarity } from './items.js';
+import { ITEMS, GRID, ITEM_LEVEL_CAP, RARITIES, STARTING_ITEMS, adjacentTo, canPlace, canSwap, cellsFor, footprintClipPath, footprintFor, footprintOutlinePath, getWeaponStats, projectileFanAngles, rollLoot, rollLootFromRarity } from './items.js';
 import { META_PERKS, loadProgression, saveProgression } from './progression.js';
 
 const PLAYER_SHIELD_CAP=150;
@@ -621,7 +621,8 @@ function renderBackpack() {
       cell.style.setProperty('--glyph-x',centerX+'%');cell.style.setProperty('--glyph-y',centerY+'%');cell.style.setProperty('--glyph-cols',String(glyphCols));cell.style.setProperty('--glyph-rows',String(glyphRows));
       const glyphStyle='--item-rotation:'+rotation*90+'deg';
       const footprintMap='<span class="item-footprint-map" aria-hidden="true">'+footprint.map(([fx,fy])=>'<i style="grid-column:'+(fx+1)+';grid-row:'+(fy+1)+'"></i>').join('')+'</span>';
-      cell.innerHTML = '<span class="item-name">'+def.name+'</span><span class="item-level-badge" aria-label="Level '+level+'"><span aria-hidden="true">★</span><b>'+level+'</b></span>'+footprintMap+'<span class="item-art-region"><span class="item-glyph'+(def.shape?' active-glyph':'')+'" style="'+glyphStyle+'">'+visual+'</span></span>'+cooldownClock+'<span class="item-cooldown">'+intervalLabel+'</span>';
+      const footprintOutline='<svg class="item-footprint-outline" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><path d="'+footprintOutlinePath(footprint)+'"/></svg>';
+      cell.innerHTML = '<span class="item-name">'+def.name+'</span><span class="item-level-badge" aria-label="Level '+level+'"><span aria-hidden="true">★</span><b>'+level+'</b></span>'+footprintMap+footprintOutline+'<span class="item-art-region"><span class="item-glyph'+(def.shape?' active-glyph':'')+'" style="'+glyphStyle+'">'+visual+'</span></span>'+cooldownClock+'<span class="item-cooldown">'+intervalLabel+'</span>';
       cell.setAttribute('aria-label', `${def.name}, ${rarity.label}, level ${level} of ${ITEM_LEVEL_CAP}, ${effectiveCooldown ? `cooldown ${ (effectiveCooldown / 1000).toFixed(2) } seconds between shots` : 'passive item'}. ${def.description} Column ${x + 1}, row ${y + 1}. Select to move.`); cell.dataset.uid = item.uid;
       cell.addEventListener('pointerenter', () => showItemTooltip(item, cell, upgradeTarget));
       cell.addEventListener('pointerleave', hideItemTooltip);

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { cellsFor, footprintClipPath, footprintFor, getWeaponStats, projectileFanAngles, rotateFootprint } from '../src/items.js';
+import { cellsFor, footprintClipPath, footprintFor, footprintOutlinePath, getWeaponStats, projectileFanAngles, rotateFootprint } from '../src/items.js';
 
 test('Epic Overdrive keeps its three-cell L footprint through every rotation', () => {
   const expected = [
@@ -17,6 +17,9 @@ test('Epic Overdrive keeps its three-cell L footprint through every rotation', (
     const outline = footprintClipPath(footprintFor(item));
     assert.match(outline, /^polygon\(/);
     assert.equal((outline.match(/%/g) ?? []).length, 16, `rotation ${rotation} should trace all eight boundary segments`);
+    const perimeter=footprintOutlinePath(footprintFor(item));
+    const lineSegments=(perimeter.match(/\bL\b/g)??[]).length+(perimeter.endsWith(' Z')?1:0);
+    assert.equal(lineSegments,8,`rotation ${rotation} should draw all eight exposed L-outline segments`);
   }
 });
 

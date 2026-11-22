@@ -206,3 +206,8 @@
 .pack-cell .item-cooldown{bottom:3px!important;left:2px!important;right:2px!important;z-index:7!important;font:8px var(--mono)!important;line-height:1.2!important;letter-spacing:0!important}
 .pack-cell .item-name{right:29px!important;font-size:11px!important;line-height:1.15!important}
 @media(max-width:410px){.item-footprint-map{inset:22px 5px 33px!important}.item-art-region{inset:22px 5px 33px}.pack-cell .item-glyph.active-glyph{width:min(86%,calc(var(--glyph-cols,1)*44px))!important;height:min(58%,calc(var(--glyph-rows,1)*36px))!important}.pack-cell .item-name{left:5px!important;right:27px!important;font-size:10px!important}.pack-cell .cooldown-clock-time{bottom:17px;font-size:8px}.pack-cell .item-cooldown{font-size:7.5px!important}}
+
+/* Trace every exposed grid edge so the three occupied L cells read as one silhouette. */
+.item-footprint-outline{position:absolute;inset:23px 7px 34px;z-index:4;width:auto;height:auto;overflow:visible;pointer-events:none;filter:drop-shadow(0 0 4px color-mix(in srgb,var(--item-color) 55%,transparent))}
+.item-footprint-outline path{fill:none;stroke:color-mix(in srgb,var(--item-color) 88%,white);stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round;vector-effect:non-scaling-stroke}
+@media(max-width:410px){.item-footprint-outline{inset:22px 5px 33px}}
